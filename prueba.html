@@ -100,6 +100,9 @@ canvas{display:block}
 #cinema.on::before,#cinema.on::after{height:11vh}
 #fade{position:fixed;inset:0;background:#000;z-index:30;opacity:0;pointer-events:none;transition:opacity 1s}
 #fade.on{opacity:1}
+#saveIcon{position:fixed;right:18px;bottom:16px;z-index:40;color:#ffd23a;font:600 12px/1 system-ui,sans-serif;letter-spacing:2px;opacity:0;pointer-events:none;text-shadow:0 0 8px rgba(255,210,58,.6)}
+#saveIcon.on{animation:saveBlink 1.8s ease-out}
+@keyframes saveBlink{0%{opacity:0}15%{opacity:1}70%{opacity:1}100%{opacity:0}}
 #flash{position:fixed;inset:0;background:#fff;z-index:29;opacity:0;pointer-events:none}
 
 /* pantallas */
@@ -347,7 +350,7 @@ body.flying #mmWrap{display:none}
 <div id="colorWheel"><div class="box"><canvas id="cwWheel" width="220" height="220"></canvas><label>Brillo</label><input id="cwVal" type="range" min="0.05" max="1" step="0.01"><div class="r"><i id="cwPrev"></i><input id="cwHex" type="text" maxlength="7"><button class="btn small" id="cwOk">Listo</button></div></div></div>
 <div id="wiki"><div class="hd"><b>HOLOCRÓN</b><input id="wikiQ" type="text" placeholder="Buscar…"><button id="wikiClose">✕</button></div><div id="wikiBody"></div></div>
 <div id="flash"></div>
-<div id="fade"></div>
+<div id="fade"></div><div id="saveIcon">◆ GUARDADO</div>
 
 <div class="screen on" id="start">
   <div class="title">LA SOMBRA<br>DE EXOR</div>
@@ -375,6 +378,7 @@ body.flying #mmWrap{display:none}
     <b>J</b><span>Diario: misiones, reputación y HoloRed</span><b>T / K</b><span>Seguir misión / color del sable</span>
     <b>L</b><span>Mapa galáctico (en órbita) · H: saltar</span><b>5</b><span>Poder de Luz u Oscuridad</span>
     <b>1 – 4</b><span>Elegir en las decisiones</span><b>E</b><span>Despegar desde tu nave</span>
+    <b>F5</b><span>Guardar partida</span><b>F9</b><span>Cargar la última partida guardada</span>
   </div>
   <div class="opt">Sensibilidad del ratón <input type="range" id="sens" min="0.4" max="2.5" step="0.1" value="1"></div>
 </div>
@@ -382,7 +386,7 @@ body.flying #mmWrap{display:none}
 <div class="screen" id="pause">
   <div class="title" style="font-size:54px">PAUSA</div>
   <div class="sub">el juego está detenido</div>
-  <div class="row"><button class="btn" id="resumeBtn">Continuar</button><button class="btn small" id="restartChBtn">Reiniciar capítulo</button><button class="btn small" id="menuBtn">Menú</button></div>
+  <div class="row"><button class="btn" id="resumeBtn">Continuar</button><button class="btn small" id="saveBtn">Guardar partida (F5)</button><button class="btn small" id="restartChBtn">Reiniciar capítulo</button><button class="btn small" id="menuBtn">Menú</button></div>
   <div class="row"><button class="btn small wikiBtn">Holocrón</button><button class="btn small aiBtn">IA de los NPCs</button><button class="btn small" id="ignBtn">Encendido del sable: clásico</button></div>
   <div class="opt">Sensibilidad del ratón <input type="range" id="sens2" min="0.4" max="2.5" step="0.1" value="1"></div>
 </div>
@@ -3215,6 +3219,7 @@ function npcHead(n, out){ return out.set(n.pos.x, n.pos.y + 1.7, n.pos.z); }
 
 function npcHit(n, dmg, dir, cause){
   if (!n.alive) return;
+  if (n.hunter && hunterHit(n, dmg)) return;
   n.hp -= dmg;
   const c = _v4.set(n.pos.x, n.pos.y + 1.2, n.pos.z);
   if (cause === 'saber' || cause === 'bolt'){
@@ -3965,6 +3970,7 @@ function startGame(ch, retry = false, save = null){
 function lockPointer(){ try { const r = renderer.domElement.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
 document.querySelectorAll('[data-ch]').forEach(b => b.addEventListener('click', () => { const ch = +b.dataset.ch; if (ch === 1 || ch === 6) openCreator(() => startGame(ch)); else startGame(ch); }));
 $('resumeBtn').addEventListener('click', () => { $('pause').classList.remove('on'); G.paused = false; lockPointer(); });
+$('saveBtn').addEventListener('click', e => { e.stopPropagation(); const was = G.paused; G.paused = false; quickSave(); G.paused = was; });
 $('restartChBtn').addEventListener('click', () => startGame(G.checkpoint || 1, true));
 $('menuBtn').addEventListener('click', toMenu);
 $('endMenuBtn').addEventListener('click', toMenu);
@@ -3973,8 +3979,9 @@ $('retryBtn').addEventListener('click', () => {
   if (w === 'explore'){ $('end').classList.remove('on'); G.endShown = false; hudGameplay(true); G.control = true; lockPointer(); if (!SAGA.on && QS.flota.state === 'done') sagaBegin('a2_1'); return; }
   if (w) startGame(1); else if (G.checkpoint === 5){ const sv = loadSave(); startGame(5, false, sv); } else if (G.checkpoint === 6){ const sv = loadSave(); if (sv) startGame(6, false, sv); else startGame(6); } else startGame(G.checkpoint || 1, true);
 });
-$('continueBtn').addEventListener('click', () => { const sv = loadSave(); if (sv) startGame(sv.saga && sv.saga.on && sv.saga.mode && sv.saga.mode !== 'veyra' ? 6 : sv.ch >= 5 ? 5 : Math.max(1, sv.ch || 1), false, sv); });
+$('continueBtn').addEventListener('click', () => { const sv = loadSave(); if (sv) continueFromSave(sv); });
 function toMenu(){
+  try { saveGame(); refreshContinueBtn(); } catch (e) {}
   resetWorlds();
   ['pause', 'end'].forEach(id => $(id).classList.remove('on'));
   $('start').classList.add('on'); G.phase = 'menu'; G.paused = false; G.control = false; G.cine = null;
@@ -5389,7 +5396,7 @@ function setupPlanet(fromCine, save = null){
   G.tod = save && save.tod != null ? save.tod : 0.34;
   shuttle.group.visible = true; shuttle.group.position.copy(PAD); shuttle.group.rotation.set(0, Math.PI*0.75, 0); shuttle.setWings(0); shuttle.setRamp(1); shuttle.setEngines(0.1);
   P.pos.set(PAD.x - 6, TEMPLE.y, PAD.z + 6); P.yaw = Math.PI*0.25; P.pitch = 0; P.saberOn = false; P.igniteK = 0; setDisguise(false);
-  if (save){ P.pos.set(save.pos[0], 0, save.pos[1]); P.pos.y = planetH(P.pos.x, P.pos.z); }
+  if (save && save.pos && save.pos.length >= 2){ P.pos.set(save.pos[0], 0, save.pos[1]); P.pos.y = planetH(P.pos.x, P.pos.z); }
   saberRig.visible = true;
   if (!varkas.length) for (let i = 0; i < 6; i++) spawnVarka();
   WORLD.crystals.forEach(c => c.g.visible = !c.taken);
@@ -5491,8 +5498,10 @@ function planetInteract(){
    ============================================================ */
 const SAVE_KEY = 'sombraExor_save_v1';
 function saveGame(){
+  if (G.phase === 'menu') return;   // nunca sobrescribir la partida desde el menú
   try {
     const data = { ch: G.chapter, rpg: { ...RPG }, maxHp: P.maxHp, quests: QS, crystals: SABER_COLORS.map(c => c.have), taken: WORLD.crystals.map(c => c.taken), color: saberColorI, tod: G.tod, pos: curArea === 'planet' ? [P.pos.x, P.pos.z] : null, stats: G.stats, saga: SAGA, gpos: curArea === 'gal' ? [P.pos.x, P.pos.z] : null, xcr: SABER_COLORS.filter(c => c.extra && c.id !== 'personal' && c.id !== 'amarilloClaro').map(c => ({ id: c.id, name: c.name, hex: c.hex, have: c.have })) };
+    if (typeof saveWhere === 'function') try { data.where = saveWhere(); } catch (e) {}
     localStorage.setItem(SAVE_KEY, JSON.stringify(data)); $('continueBtn') && ($('continueBtn').style.display = '');
   } catch (e) {}
 }
@@ -6635,6 +6644,7 @@ function tpSaberPose(root, u, dt, spd){
   const ry = P.yaw + Math.PI;
   root.rotation.y = ry + S.tw + (S.spin || 0);
   root.position.y += S.jy; root.position.x += Math.sin(ry)*S.fw; root.position.z += Math.cos(ry)*S.fw;
+  tpSkillPose(root, u, dt);
   // estela del sable en los golpes
   if (avatarSaber && P.saberOn){
     tpTrail.color && tpTrail.color.copy(playerSaber.userData.color).multiplyScalar(1.3);
@@ -7370,6 +7380,7 @@ function useSkill(slot){
   if ((SK.cd[S.id] || 0) > G.time){ audio.blip(false); return; }
   if (P.force < S.cost){ toast('SIN FUERZA', 'necesitas ' + S.cost, 1.4); audio.blip(false); return; }
   if (!doSkill(S.id)) return;
+  SK.pose = { id: S.id, t0: G.time };   // gesto del avatar en 3.ª persona
   P.force -= S.cost; SK.cd[S.id] = G.time + S.cd;
 }
 function forceFX(pos, col, n = 30, spd = 6){ sparks.burst(pos, n, { speed: spd, color: col, k: 2, life: 0.6, size: 0.05 }); flashLight(pos, col, 6, 0.2); }
@@ -7408,9 +7419,13 @@ function doSkill(id){
     case 'lanzamiento': {
       if (!P.saberOn || SK.throwS){ return false; }
       const s = makeNpcSaber(playerSaber.userData.color.getHex()); setIgnite(s, 1); scene.add(s);
-      const from = _v1.copy(camera.position).addScaledVector(camFwd, 0.8).add(_v3.set(0, -0.25, 0)).clone();
-      let far = 15; const hit = segHit(from, _v3.copy(from).addScaledVector(camFwd, 15)); if (hit >= 0) far = Math.max(2, 15*hit - 0.6);
-      SK.throwS = { s, t: 0, from, dir: camFwd.clone(), far, hitSet: new Set() }; playerSaber.visible = false; audio.swing(); return true; }
+      // en 3.ª persona el sable sale de la mano del avatar hacia donde apunta la mira (y el de la mano desaparece)
+      const tp = tpThrowing();
+      const from = tp ? tpHandPos(new THREE.Vector3()) : _v1.copy(camera.position).addScaledVector(camFwd, 0.8).add(_v3.set(0, -0.25, 0)).clone();
+      const dir = camFwd.clone();
+      if (tp){ const aim = camera.position.clone().addScaledVector(camFwd, 19); const ht = segHit(camera.position, aim); if (ht >= 0) aim.lerpVectors(camera.position, aim, Math.max(0.05, ht - 0.02)); aim.sub(from); if (aim.lengthSq() > 0.5) dir.copy(aim).normalize(); }
+      let far = 15; const hit = segHit(from, _v3.copy(from).addScaledVector(dir, 15)); if (hit >= 0) far = Math.max(2, 15*hit - 0.6);
+      SK.throwS = { s, t: 0, from, dir, far, tp, hitSet: new Set() }; playerSaber.visible = false; audio.swing(); return true; }
     case 'camuflaje': SK.buffs.stealth = G.time + 8; toast('CAMUFLAJE DE LA FUERZA', 'nadie puede detectarte durante 8 s', 2); forceFX(here, 0x8fb0ff, 30, 2); for (const n of npcs) if (n.alive && n.state !== 'combat'){ n.susp = 0; } return true;
     case 'rafaga': SK.rafaga = { t: 0, dir: camFwdFlat.clone(), hitSet: new Set() }; audio.swing(); audio.forcePush(); return true;
   }
@@ -7439,7 +7454,7 @@ function skillsTick(dt){
   if (SK.throwS){
     const T = SK.throwS; T.t += dt; const k = T.t/0.42;
     const d = k < 1 ? eOut(k)*T.far : Math.max(0, (1 - eInOut(Math.min(1, k - 1)))*T.far);
-    const back = k >= 1 ? _v3.copy(camera.position).addScaledVector(camFwd, 0.6).add(_v1.set(0, -0.25, 0)) : T.from;
+    const back = k >= 1 ? (T.tp && tpThrowing() ? tpHandPos(_v3) : _v3.copy(camera.position).addScaledVector(camFwd, 0.6).add(_v1.set(0, -0.25, 0))) : T.from;
     T.s.position.copy(back).addScaledVector(k < 1 ? T.dir : _v1.subVectors(T.from.clone().addScaledVector(T.dir, T.far), back).normalize(), d);
     T.s.rotation.set(Math.PI/2, 0, T.t*22);
     for (const e of foes()) if (!T.hitSet.has(e.pos) && e.pos.distanceTo(_v1.set(T.s.position.x, e.pos.y, T.s.position.z)) < 1.4 && Math.abs(T.s.position.y - (e.pos.y + 1)) < 1.5){ T.hitSet.add(e.pos); const dir = _v2.copy(T.dir).setY(0).normalize(); e.dmg(22*RPG.dmg, dir.clone()); e.knock(dir, 5); sparks.burst(T.s.position, 12, { speed: 4, color: 0xffb070, k: 2.5, life: 0.35, size: 0.04 }); }
@@ -8511,7 +8526,7 @@ function clearSurface(){
   scene.add(shuttle.group);            // la nave no se destruye con el planeta
   hideGalSky(); disposeGroup(galGroup); COLS.gal.length = 0;
   for (const v of GS.beasts){ const j = extraTargets.indexOf(v); if (j >= 0) extraTargets.splice(j, 1); }
-  Object.assign(GS, { folk: [], beasts: [], objs: [], anim: [], pois: {}, names: {}, voidAt: null, lavaY: null, waterY: null, hostile: false, reinf: [], beast: null, particles: null, storm: false, folkN: null, suns: 1, events: [] });
+  Object.assign(GS, { folk: [], beasts: [], objs: [], anim: [], pois: {}, names: {}, voidAt: null, lavaY: null, waterY: null, hostile: false, reinf: [], beast: null, particles: null, storm: false, folkN: null, suns: 1, events: [], fauna: [], cantina: null, hunter: null, brawler: null, boards: [], homes: [], informant: null });
   clearNpcs();
 }
 function buildSurface(pid){
@@ -8549,9 +8564,13 @@ function buildSurface(pid){
   GS.sun2 = null;
   if (GS.suns === 2){ const s2 = new THREE.Sprite(new THREE.SpriteMaterial({ map: SUN2_TEX, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, color: 0xffd0a0 })); s2.scale.setScalar(90); skyRoot.add(s2); s2.position.set(520, 560, -880); GS.sun2 = s2; }
   galGroup.visible = true;
+  if (sp.length && GS.pois.cantina){ const cp = freeSpot(GS.pois.cantina, 7); cantinaSet(cp, Math.atan2(GS.pois.plaza.x - cp.x, GS.pois.plaza.z - cp.z)); }
+  spawnFauna(pid);
   if (sp.length){ const pl = GS.pois.plaza, cn = GS.pois.cantina; addHoloBoard(V3(pl.x + 7, galH(pl.x + 7, pl.z - 7) + 3.4, pl.z - 7), 0.6); if (cn) addHoloBoard(V3(cn.x + 6, galH(cn.x + 6, cn.z + 8) + 3.2, cn.z + 8), -0.5); }
   spawnResidents(pid);
   sagaPlanetHook(pid);
+  sideGivers(pid);
+  if (SAGA.companion) spawnCompanion();
   galMakeContracts(pid);
   galRandomEvent(pid);
 }
@@ -8596,8 +8615,8 @@ function updateGal(dt, rdt){
   const rr = Math.hypot(P.pos.x, P.pos.z); if (rr > 560){ P.pos.x *= 560/rr; P.pos.z *= 560/rr; }
   // tormenta de Kamino
   if (GS.storm){ GS.flashT -= dt; if (GS.flashT <= 0){ GS.flashT = 4 + Math.random()*9; $('flash').style.transition = 'none'; $('flash').style.opacity = 0.35; requestAnimationFrame(() => { $('flash').style.transition = 'opacity .5s'; $('flash').style.opacity = 0; }); addShake(0.01, 0.4); } }
-  // tareas de la saga y contratos
-  galTasksTick(dt);
+  // tareas de la saga y contratos, fauna, cazarrecompensas
+  galTasksTick(dt); faunaTick(dt); hunterTick(); sideBarks();
   // el Imperio reacciona si le das motivos
   G.saveT = (G.saveT || 0) + dt; if (G.saveT > 25){ G.saveT = 0; saveGame(); }
 }
@@ -8617,6 +8636,8 @@ function galInteract(){
 }
 function galTalk(f){
   if (f.story && f.story.onTalk){ f.story.onTalk(f); return; }
+  if (f.onTalk){ f.onTalk(f); return; }
+  if ((f.recruit || f.companion) && companionTalk(f)) return;
   if (f === GS.informant) return informantTalk(f);
   const P_ = GALAXY[GS.pid], ctl = galCtl(GS.pid);
   const pool = [
@@ -9067,7 +9088,7 @@ addEventListener('resize', () => { if ($('galmap').classList.contains('on')){ GM
    Tipos de paso: travel · goto · talk · kill · boss · item ·
    sabotage · rescue · space · contracts · choice · cine · fn · end
    ============================================================ */
-const TASKS = { story: null, contract: null };
+const TASKS = { story: null, contract: null, side: null };
 const D = (who, text, style = 'holo') => ({ who, text, style });
 const ME = text => ({ who: 'Tú', text, style: 'jedi' });
 const SI = (who, text) => ({ who, text, style: 'sith' });
@@ -9116,7 +9137,7 @@ function spawnFoes(R, center, n, foe, area){
   R.ents.push(...out); return out;
 }
 function galTaskEvent(kind, who){
-  for (const R of [TASKS.story, TASKS.contract]){
+  for (const R of [TASKS.story, TASKS.contract, TASKS.side]){
     if (!R || R.done) continue;
     if ((kind === 'npc' || kind === 'beast') && who.task === R && R.def.k === 'kill'){ R.st.count++; if (R.ents.filter(e => e.task === R).every(e => !e.alive)) finishRunner(R); else refreshSagaHUD(); }
     if (kind === 'fighter' && R.def.k === 'space' && inOrbitOf(R.def.pl)){ R.st.count++; refreshSagaHUD(); if (R.st.count >= R.def.n) finishRunner(R); }
@@ -9150,16 +9171,17 @@ function taskTick(R, dt){
       if (inOrbitOf(d.pl) && !G.cine){ OR.hostile = true; const alive = OR.enemies.filter(e => e.alive).length, left = d.n - R.st.count; R.waveT = (R.waveT || 0) - dt; if (alive < Math.min(3, left) && R.waveT <= 0){ R.waveT = 2.5; orbitSpawnFighter(); if (!R.barked){ R.barked = true; if (d.bark) bark(d.bark[0], d.bark[1], d.bark[2] || 'imp', 3.5); } } }
       break;
     case 'contracts': break;
+    case 'wait': if (d.until && d.until()) finishRunner(R); break;
   }
 }
 function sagaTick(dt){
   if (!SAGA.on || G.cine || G.choice) return;
   taskTick(TASKS.story, dt); taskTick(TASKS.contract, dt); if (TASKS.side) taskTick(TASKS.side, dt);
-  if (curArea === 'gal' && GS.hostile && !(TASKS.story && ['kill', 'boss', 'sabotage', 'rescue'].includes(TASKS.story.def.k) && runnerOnPl(TASKS.story)) && !(TASKS.contract && ['kill', 'sabotage', 'rescue'].includes(TASKS.contract.def.k) && runnerOnPl(TASKS.contract))) GS.hostile = false;
+  if (curArea === 'gal' && GS.hostile && !(TASKS.story && ['kill', 'boss', 'sabotage', 'rescue'].includes(TASKS.story.def.k) && runnerOnPl(TASKS.story)) && !(TASKS.contract && ['kill', 'sabotage', 'rescue'].includes(TASKS.contract.def.k) && runnerOnPl(TASKS.contract)) && !(TASKS.side && ['kill', 'sabotage', 'rescue', 'item'].includes(TASKS.side.def.k) && runnerOnPl(TASKS.side) && TASKS.side.spawned)) GS.hostile = false;
 }
 /* Interacciones de las tareas (objetos, prisioneros, terminales) */
 function galTaskInteract(){
-  for (const R of [TASKS.story, TASKS.contract]){
+  for (const R of [TASKS.story, TASKS.contract, TASKS.side]){
     if (!R || R.done || !runnerOnPl(R)) continue;
     for (const o of R.ents){ if (!o.kind || o.done || !o.g) continue;
       if (Math.hypot(o.pos.x - P.pos.x, o.pos.z - P.pos.z) < (o.kind === 'generator' ? 3 : 2.4)){
@@ -9244,6 +9266,7 @@ function sagaBegin(chId = 'a2_1'){
 function sagaStartChapter(id){
   const C = SAGA_CH[id]; if (!C){ console.warn('capítulo desconocido', id); return; }
   SAGA.ch = id; SAGA.si = 0; SAGA.done[id] = false; TASKS.story = null;
+  if (C.days){ SAGA.due = gHour() + C.days*24; SAGA.dueCh = id; SAGA.graced = false; } else { SAGA.due = null; SAGA.dueCh = id; }
   toast((C.act ? 'ACTO ' + C.act + ' · ' : '') + C.title.toUpperCase(), (typeof C.sub === 'function' ? C.sub() : C.sub) || '', 4);
   logEvent('Comienza: «' + C.title + '».');
   if (C.onStart) C.onStart();
@@ -9358,9 +9381,10 @@ function refreshSagaHUD(){
 function sagaObjectives(){
   const list = [];
   const R = TASKS.story, C = SAGA_CH[SAGA.ch];
-  if (R && !R.done){ const h = taskHint(R); list.push({ id: 'saga', text: '◆ <b>' + (C ? C.title : '') + '</b><br>' + taskText(R) + (h ? '<br><span style="opacity:.75;font-size:12px">' + h + '</span>' : ''), pos: () => taskPos(R) }); }
+  if (R && !R.done){ const h = taskHint(R); list.push({ id: 'saga', text: '◆ <b>' + (C ? C.title : '') + '</b>' + dueText() + '<br>' + taskText(R) + (h ? '<br><span style="opacity:.75;font-size:12px">' + h + '</span>' : ''), pos: () => taskPos(R) }); }
   else if (C && !SAGA.ending) list.push({ id: 'saga', text: '◆ <b>' + C.title + '</b>', opt: false });
   const K = TASKS.contract; if (K && !K.done){ const h = taskHint(K); list.push({ id: 'contract', text: '<b>Contrato</b><br>' + (SAGA.contract ? SAGA.contract.text : taskText(K)) + (h ? '<br><span style="opacity:.75;font-size:12px">' + h + '</span>' : ''), pos: R && !R.done ? null : () => taskPos(K), opt: !!(R && !R.done) }); }
+  const sq = sideObjective(); if (sq){ sq.opt = !!(R && !R.done); if (sq.opt) sq.pos = null; list.push(sq); }
   if (curArea === 'gal' && GS.informant && !SAGA.contract) list.push({ id: 'inf', text: 'Contratos: ' + GS.informant.name + ' (' + (GS.names.cantina || 'cantina') + ')', opt: true });
   return list;
 }
@@ -9922,21 +9946,23 @@ function sagaResidents(pid){
     if (!F.brenDead) add({ id: 'bren_res', name: 'Maestro Bren Aldric', look: CL.bren, saber: 0x22ff55, pos: V3(c.x + 4, 0, c.z + 3), persona: 'Maestro Jedi, antiguo general de las Guerras Clon; gruñón, sarcástico, leal. Lidera el refugio de la Orden tras la caída de Veyra.' });
     add({ id: 'nyx_res', name: 'Maestra Nyx Almara', look: CL.nyx, saber: 0x1257ff, pos: V3(c.x - 5, 0, c.z + 2), persona: 'Vidente del Consejo, pantorana, mística y de voz baja. Tiene visiones del eclipse.' });
     add({ id: 'oru_res', name: 'Maestro Oru-Dhan', look: CL.oru, saber: 0x1257ff, pos: V3(c.x + 2, 0, c.z - 6), persona: 'Zabrak estratega del Consejo, pausado y analítico.' });
-    add({ id: 'kiona_res', name: 'Maestra Kiona Rell', look: CL.kiona, saber: 0x1257ff, pos: V3(GS.pad.x + 8, 0, GS.pad.z - 4), persona: 'La mejor piloto de la Orden, bromista e impulsiva; manda lo que queda del escuadrón.' });
-    add({ id: 'mira_res', name: 'Padawan Mira Solen', look: CL.mira, saber: 0x1257ff, pos: V3(c.x - 8, 0, c.z - 4), persona: 'Padawan de 15 años, habladora; perdió a su maestro Toren en el asedio de Veyra y admira muchísimo al jugador.' });
+    if (!F.kionaDead) add({ id: 'kiona_res', recruit: 'kiona', name: 'Maestra Kiona Rell', look: CL.kiona, saber: 0x1257ff, pos: V3(GS.pad.x + 8, 0, GS.pad.z - 4), persona: 'La mejor piloto de la Orden, bromista e impulsiva; manda lo que queda del escuadrón.' });
+    if (!F.miraFell || F.miraSaved) add({ id: 'mira_res', recruit: 'mira', name: 'Padawan Mira Solen', look: CL.mira, saber: 0x1257ff, pos: V3(c.x - 8, 0, c.z - 4), persona: 'Padawan de 15 años, habladora; perdió a su maestro Toren en el asedio de Veyra y admira muchísimo al jugador.' });
     add({ id: 'neme_res', name: 'Archivista Neme', look: CL.neme, pos: V3(c.x + 9, 0, c.z - 2), persona: 'Zeltron archivista del Templo; salvó parte de los archivos en la evacuación.' });
-    if (F.saelForgiven) add({ id: 'sael_res', name: 'Maestra Sael Varo', look: CL.sael, saber: 0xffc81e, pos: V3(c.x - 3, 0, c.z - 9), persona: "Twi'lek del Consejo que traicionó a la Orden para salvar a su hermano Davin y fue perdonada por el jugador; vive consumida por la culpa." });
+    if (F.saelForgiven) add({ id: 'sael_res', recruit: 'sael', name: 'Maestra Sael Varo', look: CL.sael, saber: 0xffc81e, pos: V3(c.x - 3, 0, c.z - 9), persona: "Twi'lek del Consejo que traicionó a la Orden para salvar a su hermano Davin y fue perdonada por el jugador; vive consumida por la culpa." });
     if (F.saelPrisoner) add({ id: 'sael_pr', name: 'Sael Varo (prisionera)', look: CL.sael, binders: true, idle: true, pos: V3(c.x - 3, 0, c.z - 9), persona: "Twi'lek, antigua maestra del Consejo, encadenada por traición; espera el juicio." });
     if (F.ilyraFree) add({ id: 'ilyra_res', name: 'Gran Maestra Ilyra Venn', look: CL.ilyra, saber: 0x22ff55, pos: V3(c.x, 0, c.z + 6), persona: 'Gran Maestra de la Orden del Alba, rescatada de Mustafar; sabe que Exor es su antiguo padawan Corran Hale.' });
     for (let i = 0; i < 5; i++) add({ id: 'refu' + i, species: 'humano', pos: V3(c.x + rand(-14, 14), 0, c.z + rand(-14, 14)), name: pick(['Lysa', 'Pip', 'Oren', 'Tessa', 'Bram', 'Yela', 'Padawan Kel', 'Padawan Ima']), persona: 'refugiado de Veyra (aldea de Brisalba o padawan del Templo), cansado pero con esperanza.' });
   }
-  if (pid === 'tatooine' && F.rhenAlly) add({ id: 'rhen_res', name: 'Rhen Kallo', look: CL.rhen, pos: V3(GS.pois.hangar.x + 5, 0, GS.pois.hangar.z - 3), persona: 'contrabandista cínico de Mos Eisley con buen corazón; aliado del jugador.' });
-  if (pid === 'kashyyyk' && F.wookieesFree){ add({ id: 'rrakkor_res', name: 'Rrakkor', species: 'wookiee', pos: V3(GS.pois.plaza.x + 3, 0, GS.pois.plaza.z + 3), persona: 'jefe wookiee liberado por el jugador; habla en rugidos y frases cortas en básico.' }); add({ id: 'maarra_res', name: 'Maarra', species: 'wookiee', pos: V3(GS.pois.plaza.x - 3, 0, GS.pois.plaza.z + 2), persona: 'hija de Rrakkor, joven guerrera wookiee.' }); }
+  const AG = agentsInit();
+  if (AG.rhen.alive && AG.rhen.at === pid && (F.rhenAlly || F.daskInfo || SAGA.done.a2_2) && SAGA.companion !== 'rhen' && GS.pois.cantina) add({ id: 'rhen_res', name: 'Rhen Kallo', look: CL.rhen, pos: V3(GS.pois.cantina.x + 5, 0, GS.pois.cantina.z + 6), recruit: 'rhen', onTalk: rhenTalk, persona: 'contrabandista cínico de Mos Eisley con buen corazón; viaja por el Borde con su carguero y se cruza a menudo con el jugador.' });
+  if (pid === 'tatooine' && GS.pois.landmark) add({ id: 'jawa_trader', name: 'Chatarrero jawa', species: 'jawa', pos: V3(GS.pois.landmark.x + 6, 0, GS.pois.landmark.z + 4), onTalk: jawaTrader, persona: 'jawa chatarrero que regatea chillando.' });
+  if (pid === 'kashyyyk' && F.wookieesFree){ add({ id: 'rrakkor_res', recruit: 'rrakkor', name: 'Rrakkor', species: 'wookiee', pos: V3(GS.pois.plaza.x + 3, 0, GS.pois.plaza.z + 3), persona: 'jefe wookiee liberado por el jugador; habla en rugidos y frases cortas en básico.' }); add({ id: 'maarra_res', name: 'Maarra', species: 'wookiee', pos: V3(GS.pois.plaza.x - 3, 0, GS.pois.plaza.z + 2), persona: 'hija de Rrakkor, joven guerrera wookiee.' }); }
   if (pid === 'naboo' && SAGA.done.a2_3){ add({ id: 'mara_res', name: 'Mara Tessel', look: CL.mara, pos: V3(GS.pois.plaza.x + 4, 0, GS.pois.plaza.z - 4), persona: 'exsenadora de Naboo, espía contra el Imperio, elegante y fría.' }); if (F.valeRescue) add({ id: 'vale_res', name: 'Teniente Oren Vale', species: 'humano', pos: V3(GS.pois.plaza.x + 6, 0, GS.pois.plaza.z - 2), persona: 'antiguo oficial imperial, informante rescatado por el jugador; agradecido y nervioso.' }); }
   if (pid === 'bespin') add({ id: 'kell_res', name: 'Barón Idris Kell', look: CL.kell, pos: V3(GS.pois.landmark.x, 0, GS.pois.landmark.z + 8), persona: 'barón de la Ciudad Nube, codicioso y teatral; paga al Imperio para que lo deje en paz.' });
   return out;
 }
-function spawnResidents(pid){ for (const r of sagaResidents(pid)){ const f = spawnGalFolk(Object.assign({ idle: !!r.idle }, r)); f.ai.persona = r.persona || f.ai.persona; if (r.id) f.ai.id = 'res_' + r.id; } }
+function spawnResidents(pid){ for (const r of sagaResidents(pid)){ if (r.recruit && SAGA.companion === r.recruit) continue; const f = spawnGalFolk(Object.assign({ idle: !!r.idle }, r)); f.ai.persona = r.persona || f.ai.persona; if (r.id) f.ai.id = 'res_' + r.id; if (r.recruit) f.recruit = r.recruit; if (r.onTalk) f.onTalk = r.onTalk; if (r.saber && f.saber) setIgnite(f.saber, 0); } }
 
 /* ---------- Arrancar / reanudar ---------- */
 function startSagaFresh(){
@@ -9946,7 +9972,7 @@ function startSagaFresh(){
   for (const k in SAGA) delete SAGA[k]; Object.assign(SAGA, sagaDefaults());
   setupPlanet(false); sagaBegin('a2_1');
 }
-function sagaDefaults(){ return { on: false, ch: null, si: 0, flags: {}, align: 0, credits: 150, done: {}, where: 'veyra', mode: 'veyra', ctl: {}, contract: null, contractsDone: 0, cdone: {}, log: [], day: 0, heat: 0, gtime: 8, rep: { imperio: 0, resistencia: 0, hutts: 0, contrabandistas: 0 }, news: [] }; }
+function sagaDefaults(){ return { on: false, ch: null, si: 0, flags: {}, align: 0, credits: 150, done: {}, where: 'veyra', mode: 'veyra', ctl: {}, contract: null, contractsDone: 0, cdone: {}, log: [], day: 0, heat: 0, gtime: 8, rep: { imperio: 0, resistencia: 0, hutts: 0, contrabandistas: 0 }, news: [], side: null, sdone: {} }; }
 function resumeSagaWorld(sv){
   const m = SAGA.mode, w = SAGA.where;
   if (m === 'gal' && GALAXY[w]) enterSurface(w, { pos: sv && sv.gpos ? V3(sv.gpos[0], 0, sv.gpos[1]) : null });
@@ -9957,8 +9983,9 @@ function resumeSagaWorld(sv){
 }
 function sagaResume(){
   if (!SAGA.on || !SAGA.ch) return;
-  TASKS.story = null; TASKS.contract = null;
+  TASKS.story = null; TASKS.contract = null; TASKS.side = null;
   if (SAGA.contract) contractRunner();
+  if (SAGA.side && SIDEQ[SAGA.side.id]) setTimeout(sideRunStep, 900);
   setTimeout(() => sagaRunStep(), 700);
   updateAlignHUD();
 }
@@ -9993,8 +10020,6 @@ function sagaJournalHTML(){
     ${(SAGA.news || []).length ? '<h3>HOLORED</h3>' + SAGA.news.slice(0, 6).map(n => `<div class="news">Día ${n.d} · ${n.t}</div>`).join('') : ''}
     ${log ? '<h3 style="margin-top:10px">TUS DECISIONES</h3>' + log : ''}`;
 }
-/* Acceso de depuración (pruebas automáticas) */
-window.__gal = { npcHit, talkTo, advanceLines, computeInteract, tryInteract, updateInteract: typeof updateInteract === "function" ? updateInteract : null, renderer, scene, camera, quality, SAGA, GS, OR, TASKS, GALAXY, SAGA_CH, enterSurface, enterOrbit, buildSurface, sagaStartChapter, sagaRunStep, sagaBegin, galJump, startLanding, openGalMap, closeGalMap, choose, pickChoice, galTakeoff, veyraTakeoff, startSagaFresh, boardVengador, setupVengadorFinal, leaveVengador, informantTalk, acceptContract, contractDone, galInteract, galTalk, runTalk, taskText, sagaObjectives, galDominion, alignAdd, P, G, npcs, sith, folk, WORLD, PLACES, keys, sim(sec){ for (let t = 0; t < sec; t += 1/30) if (!G.paused) step(1/30); } };
 
 
 /* ============================================================
@@ -10134,7 +10159,7 @@ function updateHoloBoards(){ for (const t of GS.boards || []) drawHoloBoard(t); 
 function livingTick(dt, rdt){
   if (!SAGA.on || G.phase === 'menu') return;
   if (!G.cine || G.orbit) SAGA.gtime = (SAGA.gtime || 8) + dt/HOUR;
-  galSkyTick();
+  galSkyTick(); holoTick(); planetSoundTick(dt);
   const h = Math.floor(gHour());
   if (h !== livingTick.lastH){ const prev = livingTick.lastH; livingTick.lastH = h;
     if (prev != null){ if (h % 3 === 0) warTick(); else if (h % 5 === 0) flavorNews(); if (h % 24 === 8) newDay(); hourlyHooks(h); } }
@@ -10145,8 +10170,827 @@ const HOURLY = [];
 function hourlyHooks(h){ for (const fn of HOURLY) try { fn(h); } catch (e) { console.warn(e); } }
 /* El salto por el hiperespacio consume horas según la distancia */
 function jumpHours(a, b){ const A = GALAXY[a].m, B = GALAXY[b].m; return Math.max(3, Math.round(Math.hypot(A[0] - B[0], A[1] - B[1])*10)); }
-/* Compañeros: se amplía más adelante */
-function companionTick(f, dt){}
+
+
+/* ============================================================
+   GALAXIA VIVA · 2 — NO ERES EL ELEGIDO
+   · Cada capítulo de la trama tiene un plazo en días galácticos.
+     Si no te implicas, otro personaje lo resuelve (bien o mal) y
+     la historia sigue sin ti; te llega un holomensaje y noticias.
+   · Personajes con objetivos y rutas propias (agentes) que se
+     mueven por la galaxia, toman decisiones y mueren o triunfan.
+   ============================================================ */
+const KNIGHTS = ['Aren Tolvo', 'Seris Mond', 'Dax Orrin', 'Luma Vey', 'Tobe Kallan'];
+function agentsInit(){
+  SAGA.agents = SAGA.agents || {
+    rhen:  { name: 'Rhen Kallo', fac: 'contrabandistas', at: 'tatooine', route: ['tatooine', 'bespin', 'lothal', 'naboo', 'tatooine', 'jedha'], ri: 0, alive: true, goal: 'Pagar su deuda con los hutt y seguir vivo' },
+    mara:  { name: 'Mara Tessel', fac: 'resistencia', at: 'naboo', route: ['naboo', 'alderaan', 'coruscant', 'naboo', 'lothal'], ri: 0, alive: true, goal: 'Construir una red de resistencia en el Núcleo' },
+    kess:  { name: 'Kess Varga', fac: 'cazarrecompensas', at: 'tatooine', alive: true, goal: 'Cobrar la recompensa por el Jedi fugitivo', met: 0 },
+    varr:  { name: 'Inquisidor Varr', fac: 'imperio', at: 'coruscant', alive: true, goal: 'Cazar Jedi en el Núcleo' },
+    sayne: { name: 'Inquisidora Sayne', fac: 'imperio', at: 'mustafar', alive: true, goal: 'Custodiar el bastión y a sus prisioneros' },
+    knights: Object.fromEntries(KNIGHTS.map(n => [n, { name: n, alive: true, at: 'veyra', busy: null }])),
+  };
+  return SAGA.agents;
+}
+function knight(){ const A = agentsInit(); const k = KNIGHTS.filter(n => A.knights[n].alive && !A.knights[n].captured); return k.length ? pick(k) : null; }
+function knightFalls(n, how){ const K = agentsInit().knights[n]; if (!K) return; K.alive = false; newsPush('imp', `Muere un Jedi fugitivo en ${galName(K.at)}: ${how}.`); }
+/* ---------- Holomensajes (no detienen el juego) ---------- */
+const HOLOQ = [];
+function holoMsg(lines, title = 'HOLOMENSAJE'){ HOLOQ.push({ lines, title }); }
+function holoTick(){
+  if (!HOLOQ.length || G.lines || G.choice || G.cine || G.bossFight || G.phase === 'menu' || G.endShown) return;
+  const m = HOLOQ.shift(); toast(m.title, 'mensaje cifrado', 2);
+  say(m.lines.map(l => Object.assign({}, l, { style: l.style === 'sith' ? 'sith' : 'holo', text: String(l.text).replace(/\{nombre\}/g, LOOK.name || 'Jedi') })), null, 2.2);
+}
+/* ---------- Plazos de los capítulos y resolución «sin ti» ---------- */
+SAGA_CH.a2_1.title = 'Diez días';
+SAGA_CH.a2_1.steps[0].lines[1] = D('Gran Maestra Ilyra Venn', 'La flota zarpará hacia la ruta de Ossus en cuanto sepamos a qué nos enfrentamos. Diez días, quizá menos. Oru ha repasado los planes de Exor una y otra vez… y algo no encaja.');
+SAGA_CH.a2_1.steps[0].lines.splice(6, 0, D('Gran Maestra Ilyra Venn', 'Aren Tolvo y Seris Mond ya se han ofrecido. Hay trabajo para todos: tú no eres el único Caballero de esta Orden, pero sí uno de los que más necesitamos.'));
+SAGA_CH.a2_1.steps[0].choice = { prompt: 'Dos pistas y varios caballeros. ¿Cuál tomas tú?', opts: [
+  { t: 'Tatooine: el contrabandista Rhen Kallo (Seris irá a Naboo)', set: { lead: 'tat' }, lines: [D('Gran Maestra Ilyra Venn', 'Bien. Seris irá a Naboo. Kiona te espera para prepararte la nave.')] },
+  { t: 'Naboo: la exsenadora Mara Tessel (Aren irá a Tatooine)', set: { lead: 'nab' }, lines: [D('Gran Maestra Ilyra Venn', 'Bien. Aren irá a Tatooine. Kiona te espera para prepararte la nave.')] },
+  { t: 'Que vayan ellos: yo me quedo a proteger el Templo', al: 2, set: { lead: 'none' }, lines: [D('Gran Maestra Ilyra Venn', 'También es una forma de servir. Te avisaré si te necesitamos… y te necesitaremos.')] } ] };
+SAGA_CH.a2_1.steps[SAGA_CH.a2_1.steps.length - 1] = { k: 'travel', pl: () => SAGA.flags.lead === 'nab' ? 'naboo' : 'tatooine', if: () => SAGA.flags.lead !== 'none', text: () => SAGA.flags.lead === 'nab' ? 'Viaja a Naboo: busca a la exsenadora Mara Tessel en Theed' : 'Viaja a Tatooine: busca a Rhen Kallo en Mos Eisley' };
+SAGA_CH.a2_1.next = () => { const L_ = SAGA.flags.lead; if (L_ === 'nab'){ offstageNow('a2_2'); return 'a2_3'; } if (L_ === 'none'){ offstageNow('a2_2'); offstageNow('a2_3'); return 'a2_4'; } return 'a2_2'; };
+SAGA_CH.a2_2.steps[SAGA_CH.a2_2.steps.length - 1] = { k: 'fn', run: () => {} };
+SAGA_CH.a2_2.next = () => { if (SAGA.flags.lead === 'tat'){ offstageNow('a2_3'); return 'a2_4'; } return 'a2_3'; };
+const OFF = {
+  a2_1: { days: 2, run: () => { SAGA.flags.lead = 'none'; offstageNow('a2_2'); offstageNow('a2_3'); holoMsg([D('Gran Maestra Ilyra Venn', 'Te esperamos en el Consejo, {nombre}, pero no viniste. Aren y Seris ya han partido. Si quieres ayudar, aún queda trabajo en Coruscant.')]); return 'a2_4'; } },
+  a2_2: { days: 3, who: 'Aren Tolvo', run: () => { SAGA.flags.daskInfo = true; newsPush('imp', 'Tiroteo en el muelle 94 de Mos Eisley: un Jedi fugitivo se enfrenta a una patrulla imperial.'); holoMsg([D('Caballero Aren Tolvo', 'Aquí Aren, desde Tatooine. Rhen Kallo habló: un oficial imperial le pagó por rastrear la baliza de una lanzadera. Código Aurek-Siete-Nueve. No sé qué significa… pero no me gusta.')]); } },
+  a2_3: { days: 3, who: 'Seris Mond', run: () => { const ok = Math.random() < 0.55; SAGA.flags[ok ? 'valeRescue' : 'valeDead'] = true; newsPush(ok ? 'res' : 'imp', ok ? 'Fuga en la guarnición de Theed: un oficial acusado de traición desaparece de su celda.' : 'Ejecutado en Theed un oficial imperial acusado de espiar para la insurgencia.');
+    holoMsg([D('Caballera Seris Mond', ok ? 'Seris, desde Naboo. Saqué al teniente Vale de la guarnición. El Vengador pasará por Coruscant a recoger un expediente: «Proyecto Sombra».' : 'Seris, desde Naboo. Llegué tarde: ejecutaron al teniente Vale. Pero Mara recuperó su chip: el Vengador pasará por Coruscant a recoger un expediente, «Proyecto Sombra».')]); } },
+  a2_4: { days: 3, who: 'Dax Orrin', run: () => { const ok = Math.random() < 0.6, K = agentsInit().knights['Dax Orrin'];
+    if (ok){ SAGA.flags.archive = true; newsPush('imp', 'Intrusión en el Archivo Imperial de Coruscant. La OSI promete «consecuencias ejemplares».'); holoMsg([D('Caballero Dax Orrin', 'Dax, desde Coruscant. Tengo el expediente, aunque me han dado una buena paliza. Escucha: Exor fue reclutado en Tarsis, en el año 6, por alguien a quien llaman «la Sombra». Y la Operación Eclipse necesita un cristal focal de un «faro» Jedi del Borde.')]); }
+    else { K.captured = true; newsPush('imp', 'Capturado un Jedi en el Archivo Imperial de Coruscant. Será entregado a los Inquisidores.'); holoMsg([D('Maestro Oru-Dhan', 'Han capturado a Dax Orrin en Coruscant. No sabemos qué había en ese archivo… ni qué le sacarán a él.')]); } } },
+  a2_5: { days: 3, run: () => { const hope = Math.random() < 0.5; SAGA.flags[hope ? 'savedHope' : 'savedCruiser'] = true; SAGA.flags.siege = 'on';
+    newsPush('imp', 'Combate en la ruta de Ossus: la Armada imperial dispersa un convoy de «terroristas».');
+    holoMsg([D('Maestra Kiona Rell', 'La flota combatió en Ossus sin ti, {nombre}. ' + (hope ? 'Salvamos al Esperanza, pero perdimos el Luz del Alba.' : 'El Luz del Alba aguantó; el Esperanza se perdió.') + ' Y el Vengador ni apareció.'), D('Padawan Mira Solen', '¡Aquí Veyra! ¡Nos atacan! ¡Hay un acorazado sobre el templo!')], 'ALERTA'); } },
+  a3_1: { days: 1, run: () => { Object.assign(SAGA.flags, { veyraFallen: true, ilyraTaken: true, saelPrisoner: true, toren: 'fallen', siege: 'over', refuge: SAGA.flags.refuge || pick(['yavin', 'hoth']) }); SAGA.flags['found_' + SAGA.flags.refuge] = true; SAGA.ctl.veyra = 85;
+    newsPush('imp', 'Destruido un templo Jedi oculto en el Borde Exterior. «La amenaza Jedi ha terminado», declara el Emperador.');
+    holoMsg([D('Maestro Bren Aldric', 'Veyra ha caído, {nombre}. Exor se llevó a Ilyra. Toren murió en el patio. Y fue Sael quien nos vendió: la tengo encadenada.'), D('Maestro Bren Aldric', 'Los supervivientes vamos a ' + galName(SAGA.flags.refuge) + '. Si aún eres de los nuestros, ven.')], 'VEYRA HA CAÍDO'); return 'a4_1'; } },
+  a3_2: { days: 1, run: () => { SAGA.flags.saelPrisoner = true; SAGA.flags.refuge = SAGA.flags.refuge || 'yavin'; } },
+  a3_3: { days: 1, run: () => { Object.assign(SAGA.flags, { veyraFallen: true, siege: 'over' }); SAGA.flags['found_' + (SAGA.flags.refuge || 'yavin')] = true; SAGA.ctl.veyra = 85; holoMsg([D('Maestra Kiona Rell', 'Salimos de Veyra sin ti. Nos reunimos en ' + galName(SAGA.flags.refuge || 'yavin') + '.')]); } },
+  a4_1: { days: 3, run: () => {} },
+  a4_tarsis: { days: 5, run: () => { SAGA.flags.miraFell = true; SAGA.flags.path = 'light'; SAGA.flags.found_tarsis = true;
+    newsPush('misc', 'Una nave sin identificar se estrella en Tarsis, un mundo helado del Borde.');
+    holoMsg([D('Maestra Nyx Almara', 'Mira Solen se fue a Tarsis sola, {nombre}. Dijo que alguien tenía que ir. Hemos perdido su señal.'), D('Maestra Nyx Almara', 'Siento… frío. Como si la hubieran encontrado.')], 'MIRA HA DESAPARECIDO'); } },
+  a5l_1: { days: 4, run: () => { const ok = Math.random() < 0.5; if (ok) SAGA.flags.ilyraFree = true; else SAGA.flags.kionaDead = true;
+    newsPush(ok ? 'res' : 'imp', ok ? 'Asalto a un bastión imperial en Mustafar: una prisionera de alto valor escapa.' : 'Rechazado un ataque terrorista contra una instalación de Mustafar.');
+    holoMsg([D('Maestro Bren Aldric', ok ? 'Kiona y yo asaltamos el bastión de Mustafar. Tenemos a Ilyra.' : 'Asaltamos Mustafar sin ti. Kiona… no ha vuelto. Ilyra sigue allí.')]); } },
+  a5l_2: { days: 4, run: () => {} },
+  a5l_3: { days: 4, run: () => { SAGA.flags.knowsVazhar = true; holoMsg([D('Maestra Nyx Almara', 'He tenido una visión, {nombre}: la tumba sin nombre de Korriban. Dentro no hay nadie… porque su dueño vivía con nosotros. Vaszh. Vaszh es Darth Vazhar.')], 'VISIÓN'); } },
+  a5l_4: { days: 5, run: () => { holoMsg([D('Maestro Bren Aldric', 'Hemos reunido lo que hemos podido. Pocas naves. Vamos a Coruscant de todas formas.')]); } },
+  a5l_5: { days: 5, run: () => finalOffstage() },
+  a5d_1: { days: 3, run: () => { SAGA.flags.ilyraDead = true; holoMsg([SI('Darth Exor', 'No viniste a Mustafar. Lo hice yo mismo. Ilyra Venn ya no te llamará por tu nombre.')]); } },
+  a5d_2: { days: 3, run: () => { SAGA.flags.brenDead = true; newsPush('imp', 'Los Inquisidores arrasan un refugio Jedi en el Borde Exterior.'); } },
+  a5d_3: { days: 3, run: () => { SAGA.flags.vazharSecret = true; } },
+  a5d_4: { days: 4, run: () => finalOffstage() },
+};
+for (const k in OFF){ SAGA_CH[k].days = OFF[k].days; }
+/* Pistas del Acto IV: las que no tomes las toman otros caballeros */
+const LEAD_OFF = {
+  a4_kash: () => { const n = knight(), ok = Math.random() < 0.55; if (ok){ SAGA.flags.wookieesFree = true; SAGA.flags.ilyraMustafar = true; SAGA.ctl.kashyyyk = Math.max(0, galCtl('kashyyyk') - 20); holoMsg([D(n ? 'Caballero ' + n : 'Maestro Oru-Dhan', 'Desde Kashyyyk: los wookiees son libres. Rrakkor dice que llevaron a Ilyra a Mustafar.')]); newsPush('res', 'Revuelta wookiee en Kashyyyk: un campo de trabajo imperial arde.'); }
+    else { if (n) knightFalls(n, 'abatido en un campo de trabajo de Kashyyyk'); holoMsg([D('Maestro Oru-Dhan', 'Hemos perdido a ' + (n || 'nuestro enviado') + ' en Kashyyyk. Los wookiees siguen encadenados.')]); } },
+  a4_bespin: () => { const n = knight(), ok = Math.random() < 0.6; if (ok){ SAGA.flags.holocron = true; holoMsg([D(n ? 'Caballero ' + n : 'Maestra Nyx Almara', 'Tengo el holocrón de Corran Hale. Dice: «En Tarsis alguien nos vendió. Solo el Consejo conocía nuestra ruta.»')]); }
+    else { newsPush('misc', 'El Barón de la Ciudad Nube expulsa a unos «agitadores» y vende un holocrón en subasta privada.'); holoMsg([D('Maestra Nyx Almara', 'El Barón vendió el holocrón a otro comprador. Lo hemos perdido.')]); } },
+  a4_ilum: () => { const n = knight(), ok = Math.random() < 0.5; if (ok){ SAGA.flags.vision = true; SAGA.ctl.ilum = Math.max(0, galCtl('ilum') - 15); holoMsg([D(n ? 'Caballero ' + n : 'Maestro Oru-Dhan', 'Volamos el extractor de Ilum. En la cueva… vi una figura con un sable violeta. No sé qué significa.')]); newsPush('res', 'Sabotaje en las minas de Ilum: la producción de cristales se detiene.'); }
+    else { if (n) knightFalls(n, 'caído en las minas de Ilum'); holoMsg([D('Maestro Oru-Dhan', 'El extractor de Ilum sigue en pie. Y ' + (n || 'nuestro enviado') + ' no volverá.')]); } },
+};
+SAGA_CH.a4_hub.steps[0].opts = () => [...leadsLeft().map(k => ({ t: { a4_kash: 'Kashyyyk: los wookiees esclavizados', a4_bespin: 'Bespin: el holocrón del Barón', a4_ilum: 'Ilum: las minas de cristal' }[k] + (SAGA.leadDue && SAGA.leadDue[k] ? ` (otro caballero irá en ${Math.max(0, Math.ceil((SAGA.leadDue[k] - gHour())/24))} días)` : ''), ch: k })),
+  { t: 'Dejarlo en manos de otros caballeros y esperar noticias', tag: 'ESPERAR', fn: () => { for (const k of leadsLeft()) SAGA.leadDue[k] = Math.min(SAGA.leadDue[k] || 1e9, gHour() + 24 + Math.random()*48); }, ch: 'a4_wait' } ];
+SAGA_CH.a4_hub.onStart = () => { SAGA.leadDue = SAGA.leadDue || { a4_kash: gHour() + 24*4, a4_bespin: gHour() + 24*5, a4_ilum: gHour() + 24*6 }; };
+SAGA_CH.a4_wait = { act: 'IV', title: 'La espera', sub: 'Otros caballeros siguen las pistas', steps: [
+  { k: 'wait', until: () => !leadsLeft().length, text: 'Los otros caballeros siguen las pistas: espera sus noticias… o sal a la galaxia a lo tuyo' } ], next: () => leadsLeft().length ? 'a4_hub' : 'a4_tarsis' };
+function leadsTick(){
+  if (!SAGA.leadDue) return;
+  for (const k of leadsLeft()){ if (SAGA.leadDue[k] && gHour() >= SAGA.leadDue[k] && SAGA.ch !== k){ SAGA.done[k] = 'off'; LEAD_OFF[k](); saveGame(); } }
+}
+/* Tarsis: Nyx te pregunta si vas tú o enviamos a otro */
+SAGA_CH.a4_tarsis.steps[0] = { k: 'choice', prompt: 'Nyx: «Los tres caminos apuntan a Tarsis. Mira dice que irá ella si tú no puedes.»', opts: [
+  { t: 'Iré yo a Tarsis', lines: [D('Maestra Nyx Almara', 'He añadido sus coordenadas a tu mapa. Ten cuidado: allí la Fuerza está herida.')] },
+  { t: 'Que vaya Mira: yo tengo otros asuntos', al: -3, fn: () => { SAGA.due = gHour() + 1; }, lines: [D('Padawan Mira Solen', '¡No te fallaré! Te traeré la verdad, ya verás.')] } ] };
+/* Mustafar (Luz): si Mira cayó, es ella quien guarda el bastión */
+SAGA_CH.a5l_1.steps[2] = { k: 'boss', pl: 'mustafar', poi: 'landmark', near: 30, text: () => SAGA.flags.miraFell ? 'Enfréntate a quien guarda el bastión' : 'Derrota a la Inquisidora que guarda el bastión',
+  boss: { name: 'Inquisidora Sayne', look: 'inquisidor', hp: 260, dmg: 1.15, lines: [SI('Inquisidora Sayne', 'La vieja maestra no ha dejado de meditar desde que llegó. Me pone de los nervios.'), SI('Inquisidora Sayne', 'Te enseñaré lo que hacemos los Inquisidores con los Jedi que llegan tarde.')] } };
+const _bossDefA5L = SAGA_CH.a5l_1.steps[2];
+Object.defineProperty(_bossDefA5L, 'boss', { get(){ return SAGA.flags.miraFell ? { name: 'Mira Solen, aprendiz de Exor', look: 'inquisidor', hp: 240, dmg: 1.1, yieldAt: 0.25,
+  lines: [SI('Mira Solen', '¿Ahora vienes? ¿Ahora? Fui sola a Tarsis porque tú no quisiste ir.'), SI('Mira Solen', 'Exor me enseñó la verdad. Los Jedi mandan a los jóvenes a morir mientras los mayores meditan.')],
+  yieldLines: [SI('Mira Solen', '(Llorando, de rodillas.) …Lo siento. Lo siento tanto.')],
+  yield: { prompt: 'Mira Solen está vencida. Todavía es una niña.', opts: [ { t: 'Abrazarla: «Vuelve a casa, Mira.»', al: 12, set: { miraSaved: true }, lines: [SI('Mira Solen', '…¿Todavía tengo casa?')] }, { t: 'Acabar con ella', al: -25, kill: true, set: { miraDead: true } } ] } } : this._b; }, set(v){ this._b = v; }, configurable: true });
+_bossDefA5L._b = { name: 'Inquisidora Sayne', look: 'inquisidor', hp: 260, dmg: 1.15, lines: [SI('Inquisidora Sayne', 'La vieja maestra no ha dejado de meditar desde que llegó. Me pone de los nervios.'), SI('Inquisidora Sayne', 'Te enseñaré lo que hacemos los Inquisidores con los Jedi que llegan tarde.')] };
+/* Final sin ti: la galaxia decide */
+function finalOffstage(){
+  const F = SAGA.flags, R = repInit();
+  const light = (F.ilyraFree ? 2 : 0) + (F.wookieesFree ? 1 : 0) + (F.rhenAlly ? 1 : 0) + (F.valeRescue ? 1 : 0) + (F.knowsVazhar ? 2 : 0) + (F.corranRedeemed ? 2 : 0) + (R.resistencia > 20 ? 1 : 0) + (galDominion() < 70 ? 1 : 0) - (F.kionaDead ? 1 : 0) - (F.brenDead ? 1 : 0);
+  const win = light + Math.random()*3 >= 5;
+  newsPush(win ? 'res' : 'imp', win ? 'Batalla en la órbita de Coruscant: el acorazado Vengador es destruido. El Emperador «no ha sufrido daños».' : 'Una catástrofe gravitatoria sobre Coruscant destruye media Armada imperial. Nadie reivindica el ataque.');
+  return win ? 'END:otros_heroes' : 'END:noche_eterna';
+}
+Object.assign(ENDINGS, {
+  otros_heroes: { title: 'OTROS HÉROES', sub: 'LA GALAXIA NO TE NECESITABA', text: 'Mientras tú seguías tu propio camino, otros lucharon sobre Coruscant. Vazhar cayó sin que llegaras a verlo; el Eclipse se apagó con nombres que nadie recordará. La Orden del Alba sobrevive, dispersa. Y tú… tú sigues ahí fuera, entre contrabandistas, cantinas y rutas del Borde. Quizá algún día vuelvas.' },
+  noche_eterna: { title: 'LA NOCHE ETERNA', sub: 'EL ECLIPSE TRIUNFA', text: 'Nadie detuvo a Darth Vazhar. El Eclipse arrancó del hiperespacio a la flota del Emperador, a los rebeldes y a los últimos Jedi a la vez. El Imperio ya no tiene Emperador: tiene un nuevo amo que nadie ha visto nunca. En los mercados del Borde se habla en voz baja de una sombra con un sable violeta.' },
+});
+/* Aplicar un resultado «sin ti» */
+function offstageNow(ch){ const O = OFF[ch]; if (!O || SAGA.done[ch]) return null; SAGA.done[ch] = 'off'; (SAGA.offlog = SAGA.offlog || []).push({ ch, d: gDay(), who: O.who || '' }); return O.run(); }
+function deadlineTick(){
+  if (!SAGA.on || !SAGA.ch || SAGA.ending || G.cine || G.choice || G.bossFight || G.lines) return;
+  const C = SAGA_CH[SAGA.ch]; if (!C || !C.days) return;
+  if (SAGA.dueCh !== SAGA.ch){ SAGA.dueCh = SAGA.ch; SAGA.due = gHour() + C.days*24; SAGA.graced = false; }
+  if (gHour() < SAGA.due) return;
+  const R = TASKS.story;
+  if (R && runnerOnPl(R) && !SAGA.graced){ SAGA.graced = true; SAGA.due = gHour() + 6; toast('EL TIEMPO SE ACABA', 'te quedan unas horas para terminar esto', 3); return; }
+  const cur = SAGA.ch; TASKS.story = null;
+  const res = offstageNow(cur);
+  if (typeof res === 'string' && res.startsWith('END:')){ setTimeout(() => showEnding(res.slice(4)), 4000); return; }
+  toast('LA HISTORIA SIGUE SIN TI', (SAGA_CH[cur].title || '') + ' se resolvió sin tu ayuda', 4);
+  const nx = typeof res === 'string' ? res : (typeof C.next === 'function' ? C.next() : C.next);
+  if (nx) setTimeout(() => sagaStartChapter(nx), 2500);
+}
+HOURLY.push(h => { deadlineTick(); leadsTick(); agentsHour(h); });
+/* ---------- Agentes: se mueven y deciden cada día ---------- */
+function agentsHour(h){
+  const A = agentsInit(); if (h % 24 !== 9) return;
+  for (const key of ['rhen', 'mara']){ const a = A[key]; if (!a.alive) continue; if (Math.random() < 0.45){ a.ri = (a.ri + 1) % a.route.length; a.at = a.route[a.ri]; } }
+  const m = A.mara; if (m.alive && Math.random() < 0.5){ SAGA.ctl[m.at] = clamp(galCtl(m.at) - 3, 0, 100); newsPush('res', `Octavillas insurgentes aparecen por todo ${galName(m.at)}. «Alguien está organizando a la gente», admite un portavoz imperial.`); }
+  const r = A.rhen; if (r.alive && Math.random() < 0.25) newsPush('hutt', `Un contrabandista burla un bloqueo imperial en ${galName(r.at)}. Los hutt se lo toman con humor; el Imperio, no.`);
+  // Kess Varga sigue tu rastro si hay recompensa
+  const k = A.kess; if (k.alive && bountyLevel() > 0 && SAGA.where && GALAXY[SAGA.where] && !GALAXY[SAGA.where].space){ if (k.at !== SAGA.where && Math.random() < 0.35 + bountyLevel()*0.15){ k.at = SAGA.where; k.arrive = gHour() + 2 + Math.random()*6; } }
+  // Inquisidores cazando Jedi
+  const v = A.varr; if (v.alive && Math.random() < 0.4){ const tgt = SAGA.flags.veyraFallen && Math.random() < 0.4 ? refuge() : pick(['coruscant', 'naboo', 'alderaan', 'jedha', 'lothal']); v.at = tgt; if (tgt === refuge() && SAGA.flags.veyraFallen){ newsPush('imp', 'Los Inquisidores rastrean señales de la Fuerza en ' + galName(tgt) + '.'); if (Math.random() < 0.3){ const n = knight(); if (n) knightFalls(n, 'cazado por los Inquisidores'); } } }
+}
+function agentsHere(pid){ const A = agentsInit(); return Object.entries(A).filter(([k, a]) => k !== 'knights' && a.alive && a.at === pid).map(([k]) => k); }
+
+function dueText(){ if (!SAGA.due || SAGA.dueCh !== SAGA.ch) return ''; const h = SAGA.due - gHour(); return '<span style="opacity:.7"> · plazo: ' + (h > 48 ? Math.ceil(h/24) + ' días' : Math.max(0, Math.ceil(h)) + ' h') + '</span>'; }
+
+
+/* ============================================================
+   GALAXIA VIVA · 3 — personajes recurrentes, compañeros,
+   cantinas, fauna y droides, y el sonido de cada planeta
+   ============================================================ */
+
+/* ---------- Kess Varga, cazarrecompensas ---------- */
+const HUNTER_LINES = [
+  [IM('Kess Varga', 'Así que tú eres el Jedi que vale ' + '{precio}' + ' créditos. Esperaba a alguien más alto.'), IM('Kess Varga', 'Nada personal. Bueno, un poco sí: me haces madrugar.')],
+  [IM('Kess Varga', 'Otra vez tú. Me debes una armadura nueva.'), IM('Kess Varga', 'Esta vez he traído amigos.')],
+  [IM('Kess Varga', 'Tercera vez. Ya ni el Imperio cree que pueda atraparte… pero yo sí.'), IM('Kess Varga', 'Hoy uno de los dos se retira.')],
+];
+function hunterTick(){
+  const A = agentsInit(), k = A.kess;
+  if (!k.alive || k.retired || curArea !== 'gal' || k.at !== GS.pid || !k.arrive || gHour() < k.arrive || GS.hunter || G.cine || G.bossFight || G.lines || G.choice) return;
+  if (bountyLevel() < 1) return;
+  k.arrive = null; const i = Math.min(2, k.met || 0);
+  const c = freeSpot(V3(P.pos.x + Math.sin(P.yaw)*14, P.pos.y, P.pos.z + Math.cos(P.yaw)*14));
+  const n = spawnNpc('trooper', c, { area: 'gal', id: 'Kess Varga', yaw: yawTo(c, P.pos) });
+  n.hunter = { enc: i }; n.hp = 150 + i*50; n.u.visor.material = new THREE.MeshBasicMaterial({ color: hot(0x3aff9a, 3) });
+  n.g.traverse(o => { if (!o.isMesh || !o.material) return; if (Array.isArray(o.material)) o.material = o.material.map(m => { if (m.isMeshBasicMaterial || !m.map) return m; const c = m.clone(); c.color.set(0xc89a5a); return c; }); else if (o.material.map && !o.material.isMeshBasicMaterial){ const c = o.material.clone(); c.color.set(0xc89a5a); o.material = c; } });
+  n.g.scale.setScalar(1.05); n.state = 'combat'; n.seeT = G.time; n.lastSeen.copy(P.pos);
+  GS.hunter = n;
+  if (i >= 1) for (let j = 0; j < i + 1; j++) { const gp = freeSpot(V3(c.x + rand(-4, 4), c.y, c.z + rand(-4, 4))); const gg = spawnNpc('trooper', gp, { area: 'gal', id: 'Matón', yaw: yawTo(gp, P.pos) }); gg.state = 'combat'; gg.lastSeen.copy(P.pos); }
+  GS.hostile = true;
+  sagaSay(HUNTER_LINES[i].map(l => Object.assign({}, l, { text: l.text.replace('{precio}', [0, 5000, 20000, 60000][bountyLevel()]) })));
+  companionSay('hunter');
+}
+/* No muere del todo: huye con su mochila… salvo el tercer encuentro, que acaba en decisión */
+function hunterHit(n, dmg){
+  if (n.hp - dmg > 0) return false;
+  const A = agentsInit(), k = A.kess;
+  n.hp = 1; n.alive = false; n.state = 'dead';
+  if ((n.hunter.enc || 0) < 2){
+    k.met = (k.met || 0) + 1; k.at = pick(GAL_IDS.filter(p => !GALAXY[p].space && p !== 'veyra')); k.arrive = gHour() + 48 + Math.random()*72;
+    sparks.burst(_v4.set(n.pos.x, n.pos.y + 1, n.pos.z), 40, { speed: 8, color: 0xffa050, k: 2.5, life: 0.7, size: 0.08 }); flashLight(n.pos, 0xffa050, 12, 0.3);
+    bark('Kess Varga', pick(['¡Esto no ha terminado, Jedi!', 'Volveremos a vernos. Cuenta con ello.', 'Te has ganado un par de semanas de ventaja. Disfrútalas.']), 'imp', 3);
+    npcGroup.remove(n.g); GS.hunter = null; SAGA.credits += 60; updateAlignHUD(); newsPush('hutt', 'La cazarrecompensas Kess Varga, vista escapando de un tiroteo en ' + galName(GS.pid) + '.');
+    return true;
+  }
+  G.bossFight = false; for (const m of npcs) if (m.area === 'gal' && m.id === 'Matón'){ m.state = 'flee'; }
+  n.g.rotation.x = -0.4;
+  sagaSay([IM('Kess Varga', '(De rodillas, con el casco roto.) Vale. Tú ganas. ¿Y ahora qué, Jedi?')], () => choose('Kess Varga está a tu merced.', [
+    { t: 'Dejarla marchar: «Busca otro oficio.»', al: 5, fn: () => { k.retired = true; newsPush('hutt', 'Kess Varga anuncia que deja la caza de recompensas. Nadie se lo cree.'); } },
+    { t: 'Contratarla como escolta (500 créditos)', if: () => SAGA.credits >= 500, cr: -500, fn: () => { k.retired = true; k.hired = true; recruit('kess'); }, lines: [IM('Kess Varga', 'Pagas mejor que el Imperio. Trato hecho.')] },
+    { t: 'Acabar con ella', al: -8, fn: () => { k.alive = false; newsPush('hutt', 'Hallada muerta la cazarrecompensas Kess Varga en ' + galName(GS.pid) + '.'); } } ], () => { npcGroup.remove(n.g); GS.hunter = null; }));
+  return true;
+}
+
+/* ---------- Compañeros ---------- */
+const COMPANIONS = {
+  rhen:    { name: 'Rhen Kallo', look: () => CL.rhen, gun: true, need: () => SAGA.flags.rhenAlly, persona: 'contrabandista cínico de Mos Eisley, buen piloto, bromista; ahora te acompaña', lines: {
+    arrive: ['Bonito sitio para que nos disparen.', 'Aquí conozco a gente. La mitad quiere matarme.', 'Si vamos a la cantina, invitas tú.'], night: ['De noche los precios bajan y los cuchillos suben.'], combat: ['¡Cúbrete, que yo me escondo!', '¡Esto no entraba en el trato!'], imp: ['Soldados. Pon cara de turista.'], hunter: ['¿Kess Varga? Le debo dinero. Mucho dinero.'], dark: ['Oye… lo de antes ha sido un poco excesivo, ¿no?'], light: ['Eres demasiado bueno para esta galaxia.'] } },
+  mira:    { name: 'Padawan Mira Solen', look: () => CL.mira, saber: 0x1257ff, need: () => SAGA.flags.veyraFallen && !SAGA.flags.miraFell, persona: 'padawan de 15 años, habladora, perdió a su maestro Toren; te admira', lines: {
+    arrive: ['¡Nunca había estado aquí! ¿Esto es lo que veía Toren en sus misiones?', '¿Crees que aquí habrá Jedi escondidos?', 'Huele raro. ¿Es normal que huela raro?'], night: ['Las estrellas se ven distintas desde aquí.'], combat: ['¡Como en el patio, como en el patio!', '¡Te cubro!'], imp: ['Tengo las manos sudando…'], hunter: ['¿Una cazarrecompensas? ¡Qué emoción! Digo… qué miedo.'], dark: ['Eso… no es lo que haría un Jedi.'], light: ['Algún día quiero ser como tú.'] } },
+  kiona:   { name: 'Maestra Kiona Rell', look: () => CL.kiona, saber: 0x1257ff, need: () => SAGA.flags.veyraFallen && !SAGA.flags.kionaDead, persona: 'la mejor piloto de la Orden, bromista e impulsiva', lines: {
+    arrive: ['Buen aterrizaje. Un seis de diez.', 'Si hay un hangar, yo me quedo mirando naves.'], night: ['Hora de hacer tonterías, ¿no?'], combat: ['¡Esto es mejor que un simulador!'], imp: ['Cuento cuatro. No, cinco. Vale, muchos.'], hunter: ['Esa armadura es bonita. ¿Se la quitamos?'], dark: ['{nombre}. Mírame. Eso no eres tú.'], light: ['Ilyra estaría orgullosa.'] } },
+  rrakkor: { name: 'Rrakkor', species: 'wookiee', saber: null, melee: true, need: () => SAGA.flags.wookieesFree, persona: 'jefe wookiee liberado por el jugador; leal, feroz, habla en rugidos cortos', lines: {
+    arrive: ['(Rugido de aprobación.)', '«Rrakkor huele imperiales.»'], night: ['(Bosteza enseñando todos los dientes.)'], combat: ['(RUGIDO.)', '«¡Arrancar brazos!»'], imp: ['(Gruñido grave.)'], hunter: ['«Cazadora. Rrakkor come cazadoras.»'], dark: ['(Te mira largo rato, en silencio.)'], light: ['(Te da una palmada que casi te tumba.)'] } },
+  sael:    { name: 'Maestra Sael Varo', look: () => CL.sael, saber: 0xffc81e, need: () => SAGA.flags.saelForgiven, persona: "Twi'lek, antigua traidora perdonada; busca redimirse y encontrar a su hermano Davin", lines: {
+    arrive: ['Davin podría estar en cualquier sitio como este.', 'No me mires así. Estoy bien.'], night: ['No duermo mucho desde Veyra.'], combat: ['¡Déjamelos a mí!'], imp: ['Conozco esa insignia. Exor usa esa unidad.'], hunter: ['Kess… trabajó para Exor una vez.'], dark: ['Yo también empecé así. Con una sola decisión.'], light: ['Gracias por darme otra oportunidad.'] } },
+  corran:  { name: 'Corran Hale', look: () => CL.bren, saber: 0x22ff55, need: () => SAGA.flags.corranRedeemed, persona: 'antiguo Darth Exor, redimido; atormentado y lúcido', lines: {
+    arrive: ['Estuve aquí como Exor. No quiero recordar qué hice.'], night: ['La oscuridad no es la noche. Es otra cosa.'], combat: ['Vazhar me enseñó a luchar. Ahora lo uso contra los suyos.'], imp: ['Esos soldados me saludaban hace un mes.'], hunter: ['Kess. La contraté yo, hace tiempo.'], dark: ['No. No sigas por ahí. Sé adónde lleva.'], light: ['Ilyra tenía razón contigo.'] } },
+  kess:    { name: 'Kess Varga', species: 'humano', gun: true, need: () => agentsInit().kess.hired, persona: 'cazarrecompensas veterana, sarcástica, contratada por el jugador', lines: {
+    arrive: ['Tengo tres contactos aquí y dos quieren matarme.', 'Bonito planeta. Para morir, digo.'], night: ['Buena hora para cobrar deudas.'], combat: ['¡Por fin algo de acción!'], imp: ['Si alguno me reconoce, no me conoces.'], hunter: ['Esa soy yo. Bueno, era.'], dark: ['Eso me ha gustado. Me preocupa que me haya gustado.'], light: ['Los Jedi sois raros. Me caes bien.'] } },
+  r6:      { name: 'R6-K3', droid: true, need: () => SAGA.flags.r6, persona: 'astromecánico viejo y gruñón que se comunica con pitidos', lines: {
+    arrive: ['(Pitido alegre.)', '(Silbido curioso. Gira la cúpula a un lado y a otro.)'], night: ['(Enciende su foco.)'], combat: ['(¡Pitidos histéricos!)'], imp: ['(Pitido nervioso.)'], hunter: ['(Un pitido muy, muy grave.)'], dark: ['(Te enfoca y emite un pitido triste.)'], light: ['(Trino feliz.)'] } },
+};
+function recruit(id){ SAGA.companion = id; toast('COMPAÑERO', COMPANIONS[id].name + ' viaja contigo', 3); audio.blip(true); if (curArea === 'gal') spawnCompanion(); saveGame(); }
+function dismissCompanion(){ const f = GS.folk.find(f => f.companion); if (f) removeGalFolk(f); toast('COMPAÑERO', (COMPANIONS[SAGA.companion] || {}).name + ' te esperará en la nave', 2.5); SAGA.companion = null; saveGame(); }
+function spawnCompanion(){
+  const C = COMPANIONS[SAGA.companion]; if (!C || GS.folk.some(f => f.companion)) return;
+  const pos = freeSpot(V3(P.pos.x + 1.5, P.pos.y, P.pos.z + 1.5));
+  let f;
+  if (C.droid){ f = spawnGalFolk({ pos, name: C.name, look: { skin: '#ffffff', robe: '#ffffff' }, persona: C.persona }); f.g.visible = false; const d = makeAstromech(0x2a5ad8); d.position.copy(pos); galGroup.add(d); f.droidModel = d; }
+  else f = spawnGalFolk({ pos, name: C.name, look: C.look ? Object.assign({}, C.look()) : null, species: C.species, saberCol: C.saber, persona: C.persona, jedi: !!C.saber });
+  f.companion = SAGA.companion; f.ai.id = 'comp_' + SAGA.companion; f.atkCd = 0;
+  if (C.saber && f.saber) setIgnite(f.saber, 0);
+  setTimeout(() => companionSay('arrive'), 2500);
+}
+function companionSay(kind){
+  const f = GS.folk.find(f => f.companion); const C = COMPANIONS[SAGA.companion]; if (!C) return;
+  const L_ = C.lines[kind]; if (!L_) return; if (G.lines) return;
+  bark(C.name, pick(L_).replace(/\{nombre\}/g, LOOK.name || 'Jedi'), C.saber ? 'holo' : 'imp', 3.2);
+}
+function companionTick(f, dt){
+  const C = COMPANIONS[f.companion]; if (!C) return;
+  const dP = Math.hypot(f.pos.x - P.pos.x, f.pos.z - P.pos.z);
+  if (dP > 30){ const p = freeSpot(V3(P.pos.x - Math.sin(P.yaw)*2, P.pos.y, P.pos.z - Math.cos(P.yaw)*2)); f.pos.copy(p); }
+  // ¿enemigo cerca?
+  let tgt = null, td = 15;
+  for (const n of npcs){ if (!n.alive || n.area !== 'gal' || n.state !== 'combat' && n.state !== 'search' && !n.hunter) continue; const d = n.pos.distanceTo(f.pos); if (d < td){ td = d; tgt = n; } }
+  for (const v of GS.beasts){ if (!v.alive || v.state !== 'chase') continue; const d = v.pos.distanceTo(f.pos); if (d < td){ td = d; tgt = v; } }
+  let spd = 0, want = null;
+  if (tgt){ if (!f.inCombat){ f.inCombat = true; if (Math.random() < 0.6) companionSay('combat'); if (f.saber) setIgnite(f.saber, 1); }
+    const reach = C.gun ? 9 : 2.2; if (td > reach){ want = tgt.pos; spd = 4.2; }
+    f.atkCd -= dt; f.yaw += angDiff(f.yaw, yawTo(f.pos, tgt.pos))*(1 - Math.exp(-10*dt));
+    if (td <= reach + 0.5 && f.atkCd <= 0){ f.atkCd = C.gun ? 0.75 : 1.0;
+      if (C.gun){ const from = V3(f.pos.x, f.pos.y + 1.3, f.pos.z), dir = V3(tgt.pos.x, tgt.pos.y + 1.1, tgt.pos.z).sub(from).normalize(); dir.x += rand(-0.03, 0.03); fireBolt(from, dir, null, true, 40, 14); f.u.armR.rotation.x = -1.5; }
+      else { f.u.armL.rotation.x = -2.2; setTimeout(() => { f.u.armL.rotation.x = -0.6; }, 180); const dir = V3(tgt.pos.x - f.pos.x, 0, tgt.pos.z - f.pos.z).normalize(); if (tgt.hit) tgt.hit(14, dir); else npcHit(tgt, 16, dir, 'saber'); } } }
+  else { if (f.inCombat){ f.inCombat = false; if (f.saber) setIgnite(f.saber, 0); }
+    if (dP > 3.5){ want = V3(P.pos.x - Math.sin(P.yaw)*1.8 + Math.cos(P.yaw)*1.2, 0, P.pos.z - Math.cos(P.yaw)*1.8 - Math.sin(P.yaw)*1.2); spd = dP > 8 ? 6 : P.running ? 6.4 : 4.2; }
+    else f.yaw += angDiff(f.yaw, yawTo(f.pos, P.pos))*(1 - Math.exp(-3*dt)); }
+  if (want && spd){ const to = V3(want.x - f.pos.x, 0, want.z - f.pos.z); const d = to.length(); if (d > 0.3){ to.divideScalar(d); const st = Math.min(spd*dt, d); const ox = f.pos.x, oz = f.pos.z; moveCircle(f.pos, to.x*st, to.z*st, 0.35, f.pos.y, 'gal'); if (galGround(f.pos.x, f.pos.z) < -500){ f.pos.x = ox; f.pos.z = oz; } if (!tgt) f.yaw += angDiff(f.yaw, Math.atan2(to.x, to.z))*(1 - Math.exp(-8*dt)); f.walkPh += dt*spd*3.4; walkAnim(f.u, f.walkPh, Math.min(1, spd/3), !tgt); } }
+  else { f.u.legL.rotation.x = damp(f.u.legL.rotation.x, 0, 8, dt); f.u.legR.rotation.x = damp(f.u.legR.rotation.x, 0, 8, dt); }
+  f.pos.y = galH(f.pos.x, f.pos.z); f.g.position.copy(f.pos); f.g.rotation.y = f.yaw;
+  if (f.droidModel){ f.droidModel.position.copy(f.pos); f.droidModel.rotation.y = f.yaw; f.droidModel.userData.dome.rotation.y = Math.sin(G.time*0.7)*0.8; }
+  // comentarios de vez en cuando
+  f.chatT = (f.chatT ?? 40) - dt;
+  if (f.chatT <= 0 && !G.lines && !tgt){ f.chatT = 70 + Math.random()*80; const night = (GS.night || 0) > 0.5; const imp = npcs.some(n => n.alive && n.area === 'gal' && n.pos.distanceTo(P.pos) < 18);
+    companionSay(night && Math.random() < 0.4 ? 'night' : imp && Math.random() < 0.5 ? 'imp' : SAGA.align <= -40 && Math.random() < 0.4 ? 'dark' : SAGA.align >= 40 && Math.random() < 0.4 ? 'light' : 'arrive'); }
+}
+/* Hablar con un posible compañero (residentes con recruit) */
+function companionTalk(f){
+  const id = f.recruit; const C = COMPANIONS[id];
+  if (f.companion){ choose(C.name + ' te acompaña.', [{ t: 'Sigamos juntos', fn: () => {} }, { t: 'Espérame en la nave (despedir)', fn: () => dismissCompanion() }, { t: 'Conversar (IA)', if: () => aiReady(), fn: () => openChat(f) }]); return true; }
+  if (!id || !C || !C.need()) return false;
+  choose(C.name + (SAGA.companion ? ' (ya viajas con ' + COMPANIONS[SAGA.companion].name + ')' : ''), [
+    { t: '¿Vienes conmigo?', fn: () => { if (SAGA.companion) dismissCompanion(); removeGalFolk(f); recruit(id); } },
+    { t: 'Solo quería saludar', fn: () => bark(f.name, pick(['Cuídate ahí fuera.', 'Aquí estaré.', 'Que la Fuerza te acompañe.']), 'holo', 2.5) } ]);
+  return true;
+}
+/* ---------- Contrabandista recurrente: Rhen Kallo te busca por la galaxia ---------- */
+function rhenTalk(f){
+  choose('Rhen Kallo te saluda con dos dedos. «¿Qué necesitas, amigo?»', [
+    { t: 'Rumores', fn: () => { const k = agentsInit().kess; const r = [k.alive && !k.retired && bountyLevel() ? 'Kess Varga pregunta por ti. La última vez la vieron en ' + galName(k.at) + '.' : 'La cazarrecompensas Kess Varga anda tranquila. De momento.', 'La Oficina de Seguridad ha subido la recompensa por los Jedi. Tú vales ' + [0, 5000, 20000, 60000][bountyLevel()] + ' créditos.', 'En ' + galName(pick(GAL_IDS.filter(p => galCtl(p) < 40 && !GALAXY[p].space) || ['tatooine'])) + ' el Imperio anda flojo. Buen sitio para esconderse.']; sagaSay([IM('Rhen Kallo', pick(r))]); } },
+    { t: 'Un trabajo de contrabando (entrega en otro mundo)', if: () => !SAGA.contract, fn: () => { const to = pick(GAL_IDS.filter(p => p !== GS.pid && !GALAXY[p].space && p !== 'veyra' && (GALAXY[p].species || []).length)); const who = pick(GAL_NAMES); acceptContract({ k: 'entrega', pid: to, poi: 'cantina', x: who, text: `Lleva la carga de Rhen a ${who}, en la cantina de ${galName(to)}`, xp: 120, cr: 350, ctl: 0 }); repAdd('contrabandistas', 3); } },
+    { t: '¿Vienes conmigo?', if: () => SAGA.flags.rhenAlly && SAGA.companion !== 'rhen', fn: () => { if (SAGA.companion) dismissCompanion(); removeGalFolk(f); recruit('rhen'); } },
+    { t: 'Nada, solo pasaba', fn: () => {} } ]);
+}
+/* ---------- Cantinas: terraza, barra, droide camarero, músicos, sabacc y peleas ---------- */
+function makeAstromech(col = 0x3a6ad8){
+  const g = new THREE.Group(), wh = gm(0xe8ecf0, { metalness: 0.4, roughness: 0.4 }), cm = gm(col, { metalness: 0.3 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.62, 12), wh); body.position.y = 0.55; g.add(body);
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.285, 0.285, 0.12, 12), cm); band.position.y = 0.66; g.add(band);
+  const dome = new THREE.Group(); dome.position.y = 0.86; g.add(dome); dome.add(new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 8, 0, Math.PI*2, 0, Math.PI/2), gm(0xc8ccd4, { metalness: 0.7, roughness: 0.3 })));
+  const eye = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.05), gglow(0xff3a2a, 2)); eye.position.set(0, 0.14, 0.25); dome.add(eye);
+  const p2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.04), cm); p2.position.set(0.1, 0.06, 0.26); dome.add(p2);
+  for (const s of [-1, 1]){ const leg = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.7, 0.16), wh); leg.position.set(s*0.34, 0.42, 0); g.add(leg); const ft = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.1, 0.28), cm); ft.position.set(s*0.34, 0.05, 0); g.add(ft); }
+  g.userData.dome = dome; g.traverse(o => { if (o.isMesh) o.castShadow = true; }); return g;
+}
+function cantinaSet(pos, yaw){
+  const b = makeBatcher(), wood = gm(0x6a4a30), dk = gm(0x3a2a20), y = galH(pos.x, pos.z);
+  const fx = Math.sin(yaw), fz = Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+  const at = (a, c) => V3(pos.x + rx*a + fx*c, y, pos.z + rz*a + fz*c);
+  const bar = at(0, 0); gBox(b, 7, 1.1, 1, dk, bar.x, y, bar.z, { ry: yaw, low: true }); gBox(b, 7.2, 0.12, 1.2, wood, bar.x, y + 1.1, bar.z, { ry: yaw, col: false });
+  for (let i = 0; i < 4; i++){ const t = at(-6 + i*4, 5 + (i % 2)*2); gCyl(b, 0.7, 0.7, 0.08, wood, t.x, y + 0.9, t.z, 10, { col: false }); gCyl(b, 0.1, 0.12, 0.9, dk, t.x, y, t.z, 6, { low: true }); for (let k = 0; k < 3; k++){ const a = k/3*6.28; gCyl(b, 0.25, 0.25, 0.5, dk, t.x + Math.cos(a)*1.1, y, t.z + Math.sin(a)*1.1, 8, { col: false }); } }
+  const stage = at(6, 2); gBox(b, 4, 0.3, 3, gm(0x2a1a2a), stage.x, y, stage.z, { ry: yaw, low: true });
+  galGroup.add(b.build());
+  const L_ = new THREE.PointLight(0xffb070, 10, 22, 1.6); L_.position.set(pos.x + fx*3, y + 3.5, pos.z + fz*3); galGroup.add(L_);
+  GS.cantina = { pos: pos.clone(), bar, stage, yaw, tables: [0, 1, 2, 3].map(i => at(-6 + i*4, 5 + (i % 2)*2)) };
+  // droide camarero y músicos
+  const bart = spawnGalFolk({ pos: at(0, -1.4), name: 'Droide camarero', look: { skin: '#c8a040', hair: '#c8a040', robe: '#c8a040', inner: '#a08030', belt: '#6a5020', bald: true, eyes: '#ffe070', pants: '#c8a040' }, idle: true, role: 'gal_barman', yaw: yaw });
+  bart.story = { mark: false, onTalk: f => barTalk(f) };
+  const sp = GALAXY[GS.pid].species || ['humano'];
+  for (let i = 0; i < 3; i++){ const m = spawnGalFolk({ species: sp[i % sp.length], pos: V3(stage.x + (i - 1)*1.1, 0, stage.z), name: pick(['Figrin', 'Tedn', 'Nalan', 'Doikk', 'Ickabel']) === 'Figrin' ? 'Músico' : 'Músico', idle: true, yaw: yaw + Math.PI, role: 'gal_musico' }); m.musician = true; GS.anim.push(() => { if (!m.alive) return; const on = cantinaMusicOn(); m.u.armL.rotation.x = on ? -1 + Math.sin(G.time*8 + i)*0.3 : 0; m.u.armR.rotation.x = on ? -1.2 + Math.cos(G.time*8 + i)*0.3 : 0; }); }
+  // jugador de sabacc
+  const t0 = GS.cantina.tables[1]; const gam = spawnGalFolk({ species: pick(sp), pos: V3(t0.x + 1, 0, t0.z), name: pick(['Lando', 'Dorn', 'Vessa', 'Taro', 'Quill']) === 'Lando' ? 'Jugador de sabacc' : 'Jugador de sabacc', idle: true, role: 'gal_sabacc' });
+  gam.giver = true; gam.story = { mark: true, onTalk: f => sabaccStart(f) };
+  const ast = makeAstromech(pick([0x3a6ad8, 0xd83a3a, 0x3ab85a, 0xd8a03a])); galGroup.add(ast); GS.fauna.push({ kind: 'astro', g: ast, pos: at(2, 3), home: at(2, 3), tgt: at(2, 3), t: 0, spd: 1.2 });
+}
+function cantinaMusicOn(){ if (!GS.cantina) return false; const h = localTod(GS.pid); return h >= 15 || h < 4; }
+function barTalk(f){
+  choose('El droide camarero: «Bienvenido. ¿Qué desea tomar?» (Tienes ' + SAGA.credits + ' créditos.)', [
+    { t: 'Una copa (10 créditos): escuchar rumores', if: () => SAGA.credits >= 10, cr: -10, fn: () => { const rum = [...sagaRumors(), ...(SAGA.news || []).slice(0, 3).map(n => 'Se comenta: ' + n.t), 'Dicen que el Imperio controla el ' + galDominion() + '% de la galaxia. Yo solo sirvo copas.']; sagaSay([IM('Droide camarero', pick(rum))]); } },
+    { t: 'Invitar a toda la cantina (60 créditos)', if: () => SAGA.credits >= 60, cr: -60, fn: () => { repAdd('contrabandistas', 4, 'invitaste a una ronda'); bark('Clientes', '¡Por el forastero!', 'imp', 2.5); } },
+    { t: 'Nada, gracias', fn: () => {} } ]);
+}
+/* Sabacc simplificado: gana quien quede más cerca de cero (sabacc puro = 0) */
+function sabaccStart(f){
+  choose(f.name + ': «¿Una mano de sabacc? Gana quien más se acerque a cero.» (Tienes ' + SAGA.credits + ' cr.)', [
+    ...[50, 100, 250].map(b => ({ t: 'Apostar ' + b + ' créditos', if: () => SAGA.credits >= b, fn: () => sabaccHand(f, b) })), { t: 'Hoy no', fn: () => {} } ]);
+}
+function sabaccHand(f, bet){
+  const card = () => { const v = Math.floor(Math.random()*21) - 10; return v; };
+  const me = [card(), card()], op = [card(), card()];
+  const sum = a => a.reduce((s, x) => s + x, 0);
+  const round = (draws) => choose(`Tus cartas: ${me.join('  ')}  (total ${sum(me)}). ${f.name} te observa.`, [
+    { t: 'Plantarme', fn: () => resolve() },
+    { t: 'Robar otra carta', if: () => draws < 2, fn: () => { me.push(card()); round(draws + 1); } },
+    { t: 'Usar la Fuerza para «ajustar» una carta', al: -2, why: 'hiciste trampas con la Fuerza', fn: () => { const i = me.reduce((bi, x, i) => Math.abs(x) > Math.abs(me[bi]) ? i : bi, 0); me[i] = -sum(me.filter((_, k) => k !== i)); resolve(); } },
+    { t: 'Retirarme (pierdes la mitad)', fn: () => { SAGA.credits -= Math.round(bet/2); updateAlignHUD(); bark(f.name, 'Sabia decisión.', 'imp', 2); } } ]);
+  const resolve = () => { while (Math.abs(sum(op)) > 4 && op.length < 4) op.push(card()); const a = Math.abs(sum(me)), b = Math.abs(sum(op));
+    const win = a < b || (a === b && Math.random() < 0.5); SAGA.credits += win ? bet : -bet; updateAlignHUD(); repAdd('contrabandistas', win ? 1 : 0);
+    sagaSay([IM(f.name, `Mis cartas: ${op.join('  ')} (total ${sum(op)}). ` + (win ? pick(['Bah. Tuya.', 'Suerte de principiante.', 'Otra vez, y esta vez no pestañees.']) : pick(['La casa gana.', 'Gracias por los créditos.', '¿Otra? Seguro que la próxima…'])))]);
+    if (!win && Math.random() < 0.15) brawlStart(); };
+  round(0);
+}
+/* Peleas de cantina: alguien busca pelea contigo (a puñetazos: nadie muere) */
+function brawlStart(){
+  if (!GS.cantina || GS.brawler) return;
+  const sp = GALAXY[GS.pid].species || ['humano']; const p = freeSpot(V3(GS.cantina.pos.x + 3, 0, GS.cantina.pos.z + 4));
+  const f = spawnGalFolk({ species: pick(sp.filter(s => s !== 'jawa' && s !== 'ewok')) || 'humano', pos: p, name: pick(['Borracho', 'Matón de la cantina', 'Pendenciero']), idle: false });
+  f.brawl = { hp: 40, cd: 1 }; GS.brawler = f; bark(f.name, pick(['¡Eh, tú! ¡Me has mirado mal!', '¡Tú me has hecho perder! ¡Fuera!', '¿Te crees muy duro?']), 'imp', 2.6);
+  const v = { pos: f.pos, r: 0.5, alive: true, gal: true, hit: (d, dir) => { f.brawl.hp -= d; f.pos.addScaledVector(dir.setY(0).normalize(), 0.6); sparks.burst(_v4.set(f.pos.x, f.pos.y + 1.2, f.pos.z), 6, { speed: 2, color: 0xffe0a0, k: 2, life: 0.2, size: 0.03 }); if (f.brawl.hp <= 0) brawlEnd(true); }, push: (dir) => { f.pos.addScaledVector(dir.setY(0).normalize(), 3); f.brawl.hp -= 15; if (f.brawl.hp <= 0) brawlEnd(true); } };
+  f.brawlTarget = v; extraTargets.push(v);
+  GS.anim.push(dt => { if (!GS.brawler || GS.brawler !== f) return; const d = f.pos.distanceTo(P.pos); f.brawl.cd -= dt; f.yaw = yawTo(f.pos, P.pos);
+    if (d > 1.4){ const to = V3(P.pos.x - f.pos.x, 0, P.pos.z - f.pos.z).normalize(); moveCircle(f.pos, to.x*3.2*dt, to.z*3.2*dt, 0.35, f.pos.y, 'gal'); f.walkPh += dt*9; walkAnim(f.u, f.walkPh, 0.8, false); }
+    else if (f.brawl.cd <= 0){ f.brawl.cd = 1.3; f.u.armR.rotation.x = -1.8; setTimeout(() => f.u.armR.rotation.x = 0, 200); hurtPlayer(4, f.pos); }
+    v.pos = f.pos; if (d > 40) brawlEnd(false); });
+}
+function brawlEnd(won){ const f = GS.brawler; if (!f) return; GS.brawler = null; const j = extraTargets.indexOf(f.brawlTarget); if (j >= 0) extraTargets.splice(j, 1);
+  if (won){ f.u.legL.rotation.x = f.u.legR.rotation.x = -1.4; f.g.rotation.x = -1.2; f.idle = true; bark('Clientes', pick(['¡Uuuh! ¡Al suelo!', '¡Eso le pasa por bocazas!', '¡Otra ronda para el forastero!']), 'imp', 2.5); repAdd('contrabandistas', 2); SAGA.credits += 20; updateAlignHUD(); setTimeout(() => { f.g.rotation.x = 0; f.u.legL.rotation.x = f.u.legR.rotation.x = 0; f.idle = false; }, 15000); } }
+HOURLY.push(h => { if (curArea === 'gal' && GS.cantina && (h % 24 >= 21 || h % 24 < 2) && Math.random() < 0.25 && !G.lines && Math.hypot(P.pos.x - GS.cantina.pos.x, P.pos.z - GS.cantina.pos.z) < 30) brawlStart(); });
+
+/* ---------- Fauna y droides por todas partes ---------- */
+function makeCreature(kind){
+  const g = new THREE.Group(), legs = [];
+  const box = (w, h, d, col, x, y, z, par = g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), gm(col, { roughness: 1 })); m.position.set(x, y, z); m.castShadow = true; par.add(m); return m; };
+  if (kind === 'bantha' || kind === 'nerf'){
+    const s = kind === 'bantha' ? 1 : 0.7, fur = kind === 'bantha' ? 0x6a4a30 : 0x8a7050;
+    box(1.6*s, 1.4*s, 2.6*s, fur, 0, 1.9*s, 0); const hd = new THREE.Group(); hd.position.set(0, 2.1*s, 1.5*s); g.add(hd); box(0.9*s, 0.9*s, 0.8*s, fur, 0, 0, 0, hd); box(0.7*s, 0.5*s, 0.4*s, 0x3a2a1c, 0, -0.2*s, 0.45*s, hd);
+    for (const sx of [-1, 1]){ const h = new THREE.Mesh(new THREE.TorusGeometry(0.28*s, 0.08*s, 6, 10, Math.PI*1.4), gm(0xd8c8a0)); h.position.set(sx*0.5*s, 0.2*s, -0.05*s); h.rotation.y = sx*Math.PI/2; hd.add(h); }
+    for (const [x, z] of [[-0.55, 0.9], [0.55, 0.9], [-0.55, -0.9], [0.55, -0.9]]){ const l = box(0.4*s, 1.3*s, 0.4*s, fur, x*s, 0.65*s, z*s); l.geometry.translate(0, -0.65*s, 0); l.position.y = 1.3*s; legs.push(l); }
+  } else if (kind === 'dewback'){
+    box(1, 0.8, 2.4, 0x5a7a3a, 0, 0.9, 0); box(0.7, 0.6, 0.9, 0x5a7a3a, 0, 1.05, 1.5); box(0.4, 0.4, 1.6, 0x4a6a30, 0, 0.8, -1.8);
+    for (const [x, z] of [[-0.5, 0.8], [0.5, 0.8], [-0.5, -0.8], [0.5, -0.8]]){ const l = box(0.3, 0.6, 0.3, 0x4a6a30, x, 0.3, z); l.geometry.translate(0, -0.3, 0); l.position.y = 0.6; legs.push(l); }
+  } else if (kind === 'tauntaun' || kind === 'kaadu'){
+    const col = kind === 'tauntaun' ? 0xd8d0c0 : 0x5a7aa0;
+    box(0.8, 1, 1.2, col, 0, 1.6, 0); box(0.35, 0.9, 0.35, col, 0, 2.3, 0.5); const hd = box(0.4, 0.4, 0.7, col, 0, 2.7, 0.7); if (kind === 'tauntaun'){ box(0.1, 0.4, 0.1, 0xa89a80, -0.15, 2.95, 0.6); box(0.1, 0.4, 0.1, 0xa89a80, 0.15, 2.95, 0.6); } else box(0.3, 0.15, 0.3, 0xd8a040, 0, 2.62, 1.1);
+    box(0.3, 0.3, 1.2, col, 0, 1.5, -1);
+    for (const x of [-0.3, 0.3]){ const l = box(0.25, 1.2, 0.3, col, x, 0.6, 0); l.geometry.translate(0, -0.6, 0); l.position.y = 1.2; legs.push(l); }
+  }
+  g.userData.legs = legs; return g;
+}
+function makeProbeDroid(){
+  const g = new THREE.Group(), dk = gm(0x1a1a1e, { metalness: 0.6, roughness: 0.4 });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 10), dk); g.add(body);
+  const eye = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.05), gglow(0xff2a1a, 3)); eye.position.set(0, 0.05, 0.44); g.add(eye);
+  for (let i = 0; i < 5; i++){ const a = i/5*6.28, l = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.01, 1.2, 4), dk); l.position.set(Math.cos(a)*0.2, -0.8, Math.sin(a)*0.2); l.rotation.z = Math.cos(a)*0.2; g.add(l); }
+  const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.6, 4), dk); ant.position.set(0.15, 0.6, 0); g.add(ant);
+  return g;
+}
+const FAUNA = {
+  tatooine: [['bantha', 5, 'wild'], ['dewback', 3, 'garrison'], ['astro', 3, 'market'], ['mouse', 3, 'plaza']],
+  naboo: [['kaadu', 4, 'wild'], ['astro', 2, 'plaza'], ['mouse', 2, 'plaza']], alderaan: [['nerf', 6, 'wild'], ['astro', 2, 'plaza']],
+  hoth: [['tauntaun', 5, 'plaza'], ['probe', 2, 'wild']], coruscant: [['astro', 5, 'plaza'], ['mouse', 5, 'plaza'], ['probe', 2, 'market']],
+  lothal: [['probe', 2, 'plaza'], ['astro', 2, 'market'], ['mouse', 2, 'plaza']], bespin: [['astro', 3, 'plaza'], ['mouse', 3, 'plaza']],
+  kamino: [['astro', 2, 'plaza']], mustafar: [['probe', 3, 'plaza']], jedha: [['bantha', 3, 'wild'], ['astro', 2, 'plaza'], ['probe', 1, 'plaza']],
+  ilum: [['probe', 2, 'plaza']], geonosis: [['probe', 3, 'plaza']], kashyyyk: [['probe', 1, 'garrison']], endor: [['probe', 1, 'wild']], yavin: [], dagobah: [], korriban: [], tarsis: [['probe', 1, 'plaza']],
+};
+function spawnFauna(pid){
+  GS.fauna = GS.fauna || [];
+  for (const [kind, n, at] of FAUNA[pid] || []){ const c = GS.pois[at] || GS.pois.plaza; for (let i = 0; i < n; i++){
+    const home = freeSpot(V3(c.x + rand(-18, 18), c.y, c.z + rand(-18, 18)));
+    const g = kind === 'astro' ? makeAstromech(pick([0x3a6ad8, 0xd83a3a, 0x3ab85a, 0xd8a03a, 0x8a3ad8])) : kind === 'probe' ? makeProbeDroid() : kind === 'mouse' ? (() => { const m = new THREE.Group(); const bx = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.22, 0.5), gm(0x2a2a30, { metalness: 0.5 })); bx.position.y = 0.14; m.add(bx); const l = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.02), gglow(0xff5a3a, 2)); l.position.set(0, 0.2, 0.26); m.add(l); return m; })() : makeCreature(kind);
+    g.position.copy(home); galGroup.add(g);
+    GS.fauna.push({ kind, g, pos: home.clone(), home, tgt: home.clone(), t: Math.random()*4, spd: { astro: 1.1, mouse: 3.2, probe: 1.4, bantha: 0.9, nerf: 1, dewback: 0.8, tauntaun: 2, kaadu: 2.2 }[kind] || 1, ph: Math.random()*6 }); } }
+}
+function faunaTick(dt){
+  for (const a of GS.fauna || []){
+    a.t -= dt; if (a.t <= 0){ a.t = 3 + Math.random()*6; const r = a.kind === 'mouse' ? 12 : a.kind === 'probe' ? 40 : 16; a.tgt = V3(a.home.x + rand(-r, r), 0, a.home.z + rand(-r, r)); if (Math.random() < 0.3) a.tgt.copy(a.pos); }
+    const to = V3(a.tgt.x - a.pos.x, 0, a.tgt.z - a.pos.z), d = to.length(); let mv = 0;
+    if (d > 0.4){ to.divideScalar(d); const st = Math.min(a.spd*dt, d), ox = a.pos.x, oz = a.pos.z; moveCircle(a.pos, to.x*st, to.z*st, a.kind === 'bantha' ? 1.2 : 0.4, a.pos.y, 'gal'); if (galGround(a.pos.x, a.pos.z) < -500){ a.pos.x = ox; a.pos.z = oz; a.t = 0; } a.g.rotation.y += angDiff(a.g.rotation.y, Math.atan2(to.x, to.z))*(1 - Math.exp(-4*dt)); mv = 1; }
+    a.pos.y = galH(a.pos.x, a.pos.z); a.ph += dt*a.spd*4*mv;
+    a.g.position.set(a.pos.x, a.pos.y + (a.kind === 'probe' ? 3.2 + Math.sin(G.time*1.5 + a.ph)*0.3 : 0), a.pos.z);
+    if (a.g.userData.legs) a.g.userData.legs.forEach((l, i) => l.rotation.x = mv ? Math.sin(a.ph + i*1.7)*0.4 : 0);
+    if (a.kind === 'astro' && a.g.userData.dome) a.g.userData.dome.rotation.y = Math.sin(G.time*0.8 + a.ph)*1.2;
+    // las sondas imperiales avisan si ven un sable encendido o a un Jedi buscado
+    if (a.kind === 'probe' && (P.saberOn && P.igniteK > 0.5 || bountyLevel() >= 2) && a.pos.distanceTo(P.pos) < 22 && G.alarm <= 0 && (a.alertCd || 0) < G.time && !G.cine){
+      a.alertCd = G.time + 40; a.tgt.copy(P.pos); bark('Droide sonda', '(Pitido agudo. Una transmisión imperial sale disparada hacia el cielo.)', 'imp', 2.5);
+      if (npcs.some(n => n.alive && n.area === 'gal')) raiseAlarm(null); SAGA.heat = (SAGA.heat || 0) + 2; }
+  }
+}
+/* ---------- Sonido propio de cada planeta ---------- */
+const PSND = { cur: null, nodes: null, evT: 0, musT: 0, music: null };
+function planetSound(kind){
+  if (!audio.ctx) return;
+  const c = audio.ctx, now = c.currentTime;
+  if (!PSND.nodes){
+    const mk = (type, f, q) => { const src = c.createBufferSource(); src.buffer = audio.noiseBuf; src.loop = true; const fl = c.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q; const g = c.createGain(); g.gain.value = 0; src.connect(fl); fl.connect(g); g.connect(audio.master); src.start(); return { fl, g }; };
+    PSND.nodes = { low: mk('lowpass', 180, 0.7), mid: mk('bandpass', 700, 0.8), high: mk('highpass', 4200, 0.5) };
+    const o = c.createOscillator(); o.type = 'sine'; o.frequency.value = 55; const og = c.createGain(); og.gain.value = 0; o.connect(og); og.connect(audio.master); o.start(); PSND.nodes.hum = { o, g: og };
+  }
+  const N = PSND.nodes, set = (n, v) => n.g.gain.setTargetAtTime(v, now, 1.2);
+  const mix = { desert: [0.05, 0.03, 0.012, 0], city: [0.1, 0.02, 0.004, 0.03], plains: [0.02, 0.012, 0.006, 0], snow: [0.04, 0.05, 0.01, 0], forest: [0.015, 0.008, 0.01, 0], lava: [0.12, 0.015, 0.004, 0.02], swamp: [0.02, 0.008, 0.012, 0], clouds: [0.03, 0.02, 0.004, 0.05], ocean: [0.07, 0.05, 0.02, 0], canyon: [0.03, 0.04, 0.004, 0], none: [0, 0, 0, 0] }[kind] || [0, 0, 0, 0];
+  set(N.low, mix[0]); set(N.mid, mix[1]); set(N.high, mix[2]); set(N.hum, mix[3]);
+  N.mid.fl.frequency.setTargetAtTime(kind === 'snow' ? 520 : kind === 'canyon' ? 380 : kind === 'ocean' ? 1400 : 700, now, 1);
+  N.hum.o.frequency.setTargetAtTime(kind === 'lava' ? 38 : kind === 'city' ? 62 : 55, now, 1);
+  PSND.cur = kind;
+}
+function planetSoundTick(dt){
+  if (!audio.ctx || audio.muted) return;
+  const k = curArea === 'gal' ? (GALAXY[GS.pid] || {}).biome : 'none';
+  if (k !== PSND.cur) planetSound(k || 'none');
+  if (curArea !== 'gal') return;
+  if (PSND.nodes && (k === 'snow' || k === 'canyon')) PSND.nodes.mid.fl.frequency.value = (k === 'snow' ? 520 : 380) + Math.sin(G.time*0.23)*160;
+  PSND.evT -= dt; if (PSND.evT <= 0){ PSND.evT = 0.6 + Math.random()*2.5; planetSoundEvent(k); }
+  // música de cantina
+  if (GS.cantina){ const d = Math.hypot(P.pos.x - GS.cantina.pos.x, P.pos.z - GS.cantina.pos.z), vol = cantinaMusicOn() ? clamp(1 - (d - 6)/40, 0, 1)*0.16 : 0; cantinaMusic(vol, dt); } else cantinaMusic(0, dt);
+}
+function blipAt(f0, f1, dur, vol, type = 'sine', t0){ const c = audio.ctx, t = t0 ?? c.currentTime, o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); o.connect(g); g.connect(audio.master); o.start(t); o.stop(t + dur + 0.02); }
+function planetSoundEvent(k){
+  const c = audio.ctx, t = c.currentTime, night = (GS.night || 0) > 0.5;
+  if (k === 'forest' || k === 'plains'){ if (!night && Math.random() < 0.7){ const f = 1800 + Math.random()*1800; for (let i = 0; i < 2 + (Math.random()*3|0); i++) blipAt(f, f*1.3, 0.08, 0.02, 'sine', t + i*0.12); } else if (night) blipAt(4200, 4000, 0.3, 0.006, 'triangle'); }
+  else if (k === 'swamp'){ if (Math.random() < 0.6) for (let i = 0; i < 3; i++) blipAt(120 + Math.random()*40, 80, 0.12, 0.05, 'square', t + i*0.18); else blipAt(3800, 3600, 0.5, 0.006, 'triangle'); }
+  else if (k === 'city'){ if (Math.random() < 0.35){ const n = audio.noise(1.6, t), bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.setValueAtTime(300, t); bp.frequency.exponentialRampToValueAtTime(1600, t + 0.7); bp.frequency.exponentialRampToValueAtTime(250, t + 1.5); const g = c.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.06, t + 0.7); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.55); n.connect(bp); bp.connect(g); g.connect(audio.master); } }
+  else if (k === 'lava'){ if (Math.random() < 0.5) audio.crackle && audio.crackle(t, 0.4, 0.02, 900); if (Math.random() < 0.15) blipAt(60, 30, 1.4, 0.08, 'sine'); }
+  else if (k === 'desert'){ if (Math.random() < 0.08) blipAt(700, 500, 0.9, 0.012, 'triangle'); }
+  else if (k === 'ocean'){ if (Math.random() < 0.05){ const n = audio.noise(3, t), lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 220; const g = c.createGain(); g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.8); n.connect(lp); lp.connect(g); g.connect(audio.master); } }
+  // droides que pitan cerca
+  for (const a of GS.fauna || []){ if (a.kind === 'astro' && a.pos.distanceTo(P.pos) < 10 && Math.random() < 0.25){ for (let i = 0; i < 3; i++){ const f = 1200 + Math.random()*1800; blipAt(f, f*(Math.random() < 0.5 ? 1.5 : 0.7), 0.07, 0.025, 'square', t + i*0.09); } break; } }
+}
+/* Banda de cantina procedural: bajo, melodía saltarina y percusión */
+const MEL = [0, 4, 7, 9, 7, 4, 2, 4, 5, 9, 12, 9, 7, 5, 4, 2];
+function cantinaMusic(vol, dt){
+  const c = audio.ctx; if (!c) return;
+  if (!PSND.music){ const g = c.createGain(); g.gain.value = 0; g.connect(audio.master); PSND.music = { g, step: 0, next: c.currentTime }; }
+  const M = PSND.music; M.g.gain.setTargetAtTime(vol, c.currentTime, 0.4);
+  if (vol < 0.005) { M.next = c.currentTime; return; }
+  const beat = 60/132/2;
+  while (M.next < c.currentTime + 0.15){
+    const t = M.next, s = M.step % 16, root = [0, 0, 5, 7][Math.floor(M.step/16) % 4];
+    const note = f => 220*Math.pow(2, f/12);
+    const o = c.createOscillator(), og = c.createGain(); o.type = 'square'; o.frequency.value = note(MEL[s] + root + 12); og.gain.setValueAtTime(0.18, t); og.gain.exponentialRampToValueAtTime(0.001, t + beat*0.9); o.connect(og); og.connect(M.g); o.start(t); o.stop(t + beat);
+    if (s % 2 === 0){ const b = c.createOscillator(), bg = c.createGain(); b.type = 'triangle'; b.frequency.value = note(root - 12 + (s % 4 ? 7 : 0)); bg.gain.setValueAtTime(0.35, t); bg.gain.exponentialRampToValueAtTime(0.001, t + beat*1.8); b.connect(bg); bg.connect(M.g); b.start(t); b.stop(t + beat*2); }
+    if (s % 4 === 2){ const n = audio.noise(0.08, t), hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 5000; const ng = c.createGain(); ng.gain.setValueAtTime(0.25, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.07); n.connect(hp); hp.connect(ng); ng.connect(M.g); }
+    if (s % 8 === 0){ const k2 = c.createOscillator(), kg = c.createGain(); k2.frequency.setValueAtTime(140, t); k2.frequency.exponentialRampToValueAtTime(45, t + 0.12); kg.gain.setValueAtTime(0.5, t); kg.gain.exponentialRampToValueAtTime(0.001, t + 0.15); k2.connect(kg); kg.connect(M.g); k2.start(t); k2.stop(t + 0.16); }
+    M.step++; M.next += beat;
+  }
+}
+
+function jawaTrader(f){
+  choose('El chatarrero jawa chilla: «¡Utinni! ¡Droides buenos, casi nuevos!» (Tienes ' + SAGA.credits + ' cr.)', [
+    { t: 'Comprar el astromecánico R6-K3 (350 créditos)', if: () => !SAGA.flags.r6 && SAGA.credits >= 350, cr: -350, fn: () => { SAGA.flags.r6 = true; if (SAGA.companion) dismissCompanion(); recruit('r6'); } },
+    { t: 'Vender chatarra de la nave (+40 créditos)', if: () => !SAGA.flags.soldScrap, fn: () => { SAGA.flags.soldScrap = true; SAGA.credits += 40; updateAlignHUD(); } },
+    { t: 'Nada', fn: () => {} } ]);
+}
+
+
+/* ============================================================
+   GALAXIA VIVA · 4 — misiones secundarias con historia propia
+   Una (o más) por planeta. Quien te la ofrece te espera con «!»;
+   muchos están en la cantina. Formato igual que los capítulos.
+   ============================================================ */
+const SIDEQ = {
+  tat_deuda: { pl: 'tatooine', title: 'La deuda de Tobbi', giver: { name: 'Sela, granjera de humedad', species: 'humano', poi: 'market' }, intro: [
+      IM('Sela, granjera de humedad', 'Por favor… tú tienes pinta de poder hacer algo. Los matones de Gorga el Hutt se llevaron a mi hijo, Tobbi. Dicen que es el pago de nuestra deuda.'),
+      IM('Sela, granjera de humedad', 'Lo tienen en el cañón de los tusken, en un escondite de contrabandistas. Tiene doce años.') ], steps: [
+    { k: 'choice', prompt: '¿Cómo vas a sacar a Tobbi?', opts: [ { t: 'Pagar la deuda de Sela (400 créditos)', if: () => SAGA.credits >= 400, cr: -400, fn: () => repAdd('hutts', 5), set: { tobbiPaid: true } }, { t: 'Entrar a la fuerza', fn: () => repAdd('hutts', -8) } ] },
+    { k: 'kill', pl: 'tatooine', poi: 'ruins', n: 4, foe: 'trooper', near: 60, text: 'Acaba con los matones de Gorga en el cañón', if: () => !SAGA.flags.tobbiPaid },
+    { k: 'rescue', pl: 'tatooine', poi: 'ruins', name: 'Tobbi', guards: 0, thanks: '¿Me llevas con mi madre? ¿De verdad?' },
+    { k: 'talk', pl: 'tatooine', poi: 'market', npc: { name: 'Sela, granjera de humedad', species: 'humano', id: 'sela2' }, lines: [IM('Sela, granjera de humedad', '¡Tobbi! (Lo abraza sin poder hablar.) No tengo nada que darte… salvo esto: el viejo mapa de mi marido. Dice dónde escondía el agua buena.')], after: [ME('(Sela te da unos créditos que no puede permitirse. Los rechazas… o no.)')] },
+  ], reward: { xp: 200, cr: 120, al: 5, rep: { hutts: -2 } } },
+  cor_ninos: { pl: 'coruscant', title: 'Los niños de los niveles bajos', giver: { name: 'Ima, madre de Nilo', species: 'humano', poi: 'cantina' }, intro: [
+      IM('Ima, madre de Nilo', 'Mi hijo, Nilo… mueve cosas sin tocarlas. Los vecinos lo han visto. Y ayer vinieron agentes de la Oficina de Seguridad preguntando por «niños especiales».'),
+      IM('Ima, madre de Nilo', 'Los agentes esperan en el muelle de taxis. Si se lo llevan, se lo darán a los Inquisidores.') ], steps: [
+    { k: 'kill', pl: 'coruscant', poi: 'hangar', n: 4, foe: 'mix', near: 50, text: 'Detén a los agentes de la OSI en el muelle de taxis' },
+    { k: 'talk', pl: 'coruscant', poi: 'cantina', npc: { name: 'Ima, madre de Nilo', species: 'humano', id: 'ima2' }, lines: [IM('Ima, madre de Nilo', 'Se han ido… pero volverán. ¿Qué hago con Nilo?')],
+      choice: { prompt: 'Ima abraza a Nilo, de siete años.', opts: [
+        { t: 'Llevarlo con la Orden: allí aprenderá a controlar su don', al: 8, set: { niloJedi: true }, lines: [IM('Ima, madre de Nilo', 'Prométeme que lo cuidarán.')] },
+        { t: 'Enseñarte a esconderlo: que crezca con su madre', al: 4, lines: [IM('Ima, madre de Nilo', 'Gracias. Nadie lo sabrá nunca. Nadie.')] },
+        { t: 'Entregarlo al Imperio por la recompensa (+500 cr)', al: -20, cr: 500, fn: () => repAdd('imperio', 10), lines: [IM('Ima, madre de Nilo', '(Grita. No deja de gritar.)')] } ] } },
+  ], reward: { xp: 220, cr: 80, rep: { resistencia: 4, imperio: -4 } } },
+  nab_jardinero: { pl: 'naboo', title: 'El jardinero del palacio', giver: { name: 'Pell, el jardinero', species: 'humano', poi: 'plaza' }, intro: [
+      IM('Pell, el jardinero', 'Cuarenta años cuidando los jardines de palacio. Y el año pasado grabé algo que no debía: al gobernador imperial ordenando quemar un pueblo gungan.'),
+      IM('Pell, el jardinero', 'Me requisaron la grabación. Está en la guarnición. Si sale a la luz, medio Naboo se levantará.') ], steps: [
+    { k: 'item', pl: 'naboo', poi: 'garrison', obj: 'terminal', label: 'Recuperar la grabación del gobernador', guards: 3, text: 'Recupera la grabación en la guarnición de Theed' },
+    { k: 'choice', prompt: 'Tienes la grabación. ¿Qué haces con ella?', opts: [
+      { t: 'Difundirla por la HoloRed pirata', al: 3, fn: () => { repAdd('resistencia', 8); repAdd('imperio', -6); SAGA.ctl.naboo = clamp(galCtl('naboo') - 10, 0, 100); newsPush('res', 'Una grabación filtrada muestra al gobernador de Naboo ordenando quemar un pueblo gungan. Protestas en Theed.'); } },
+      { t: 'Vendérsela al propio gobernador (+300 cr)', al: -6, cr: 300, fn: () => repAdd('imperio', 6) } ] },
+  ], reward: { xp: 180, cr: 50 } },
+  kas_arbol: { pl: 'kashyyyk', title: 'El árbol de los antepasados', giver: { name: 'Grrawl, anciano wookiee', species: 'wookiee', poi: 'plaza' }, intro: [
+      IM('Grrawl, anciano wookiee', '«El Imperio corta el árbol de los antepasados. Tres mil años. Las máquinas no paran.»'),
+      IM('Grrawl, anciano wookiee', '«Muelle maderero. Máquina grande. Rómpela.»') ], steps: [
+    { k: 'sabotage', pl: 'kashyyyk', poi: 'hangar', what: 'la cosechadora imperial', guards: 3, text: 'Sabotea la cosechadora del muelle maderero' },
+    { k: 'choice', prompt: 'Los madereros imperiales se rinden, aterrados.', opts: [ { t: 'Atarlos y dejarlos para que los recojan', al: 4 }, { t: 'Entregarlos a los wookiees', al: -6 } ] },
+  ], reward: { xp: 200, cr: 60, rep: { resistencia: 5, imperio: -4 }, fn: () => { SAGA.ctl.kashyyyk = clamp(galCtl('kashyyyk') - 6, 0, 100); } } },
+  hot_senal: { pl: 'hoth', title: 'La señal en el hielo', giver: { name: 'Explorador Tyn', species: 'humano', poi: 'plaza' }, intro: [
+      IM('Explorador Tyn', 'Llevo tres días captando una baliza de socorro en el puesto abandonado. Código Jedi antiguo. Pero hay wampas por todas partes.') ], steps: [
+    { k: 'kill', pl: 'hoth', poi: 'wild', n: 2, foe: 'beast', near: 60, hostile: false, text: 'Abre paso entre los wampas' },
+    { k: 'item', pl: 'hoth', poi: 'ruins', obj: 'beacon', label: 'Recuperar la baliza y el holocrón', got: 'HOLOCRÓN DE UN JEDI CAÍDO', text: 'Recupera la baliza en el puesto abandonado' },
+    { k: 'cine', lines: [D('Holocrón de la Caballera Anse', 'Si alguien oye esto, la Purga me alcanzó en el hielo. No busquéis venganza. Buscad a los niños que escondimos en Alderaan.'), ME('(Un Jedi que murió sola, pensando en otros.)')] },
+    { k: 'choice', prompt: '¿Qué haces con el holocrón?', opts: [ { t: 'Entregarlo a la Orden', al: 5 }, { t: 'Guardarlo para ti', fn: () => { P.maxHp += 10; P.hp = P.maxHp; toast('HOLOCRÓN', 'vida máxima +10', 2.5); } } ] },
+  ], reward: { xp: 220, cr: 40 } },
+  end_chaman: { pl: 'endor', title: 'El chamán enfermo', giver: { name: 'Nubbo, ewok', species: 'ewok', poi: 'cantina' }, intro: [
+      IM('Nubbo, ewok', '(Te tira de la túnica y señala el árbol grande.) ¡Yub! ¡Chamán, malo! (Hace como que tose.)'),
+      IM('Nubbo, ewok', '(Dibuja en el barro una raíz y a unos jabalíes muy enfadados.)') ], steps: [
+    { k: 'kill', pl: 'endor', poi: 'wild', n: 3, foe: 'beast', near: 60, hostile: false, text: 'Espanta a los jabalíes que guardan las raíces medicinales' },
+    { k: 'item', pl: 'endor', poi: 'wild', obj: 'relic', color: 0x9aff6a, label: 'Recoger la raíz medicinal', text: 'Recoge la raíz medicinal' },
+    { k: 'talk', pl: 'endor', poi: 'landmark', npc: { name: 'Chamán ewok', species: 'ewok', id: 'chaman' }, lines: [IM('Chamán ewok', '(Mastica la raíz, tose dos veces… y se echa a reír.) ¡Yub nub!'), ME('(Toda la aldea se pone a bailar a tu alrededor.)')] },
+  ], reward: { xp: 180, cr: 20, rep: { resistencia: 3 }, al: 3, fn: () => { SAGA.ctl.endor = clamp(galCtl('endor') - 5, 0, 100); } } },
+  bes_carbonita: { pl: 'bespin', title: 'Deudas en carbonita', giver: { name: 'Lessa Orvin', species: 'humano', poi: 'cantina' }, intro: [
+      IM('Lessa Orvin', 'Mi marido le debía dinero al Barón. El Barón lo congeló en carbonita y lo tiene de adorno en las salas de carbonita. De ADORNO.'),
+      IM('Lessa Orvin', 'Hay una terminal que controla la descongelación. Por favor.') ], steps: [
+    { k: 'item', pl: 'bespin', poi: 'ruins', obj: 'terminal', label: 'Iniciar la descongelación', hold: 4, guards: 3, text: 'Descongela a Orvin en las salas de carbonita' },
+    { k: 'choice', prompt: 'Orvin tiembla, ciego por la hibernación. ¿Cómo los sacas de la ciudad?', opts: [
+      { t: 'Esconderlos en un carguero de contrabandistas', fn: () => repAdd('contrabandistas', 6) },
+      { t: 'Hablar con el Barón y pagar la deuda (300 cr)', if: () => SAGA.credits >= 300, cr: -300, al: 2 } ] },
+  ], reward: { xp: 200, cr: 90 } },
+  lot_fabrica: { pl: 'lothal', title: 'Chispas en la fábrica', giver: { name: 'Kai y Lin', species: 'humano', poi: 'cantina' }, intro: [
+      IM('Kai', 'Tú eres de los que luchan, ¿no? Se nota. Lin y yo vamos a volar la fábrica esta noche.'),
+      IM('Lin', 'Tenemos dieciséis años y ninguna idea de lo que hacemos. Pero alguien tiene que hacerlo.') ], steps: [
+    { k: 'choice', prompt: 'Dos adolescentes con una bomba casera. ¿Qué haces?', opts: [
+      { t: 'Ayudarles a hacerlo bien', set: { lothHelp: true } },
+      { t: 'Convencerles de que no lo hagan', al: 2, set: { lothStop: true }, lines: [IM('Lin', '…Vale. Pero si mañana ves las chimeneas humear, acuérdate de nosotros.')] },
+      { t: 'Denunciarles al Imperio (+400 cr)', al: -12, cr: 400, set: { lothBetray: true }, fn: () => repAdd('imperio', 10), lines: [ME('(Los soldados se llevan a Kai y a Lin esa misma noche.)')] } ] },
+    { k: 'sabotage', pl: 'lothal', poi: 'landmark', what: 'el generador de la fábrica', guards: 4, dz: 14, text: 'Sabotea la fábrica imperial con Kai y Lin', if: () => SAGA.flags.lothHelp, after: [IM('Kai', '¡Mira cómo arde! ¡Mira cómo arde!')] },
+  ], reward: { xp: 220, cr: 30, fn: () => { if (SAGA.flags.lothHelp){ SAGA.ctl.lothal = clamp(galCtl('lothal') - 10, 0, 100); repAdd('resistencia', 8); repAdd('imperio', -6); newsPush('res', 'Explosión en la gran fábrica imperial de Lothal. La producción se detiene durante semanas.'); } } } },
+  kam_clon: { pl: 'kamino', title: 'El último clon', giver: { name: 'Gris (CT-7713)', species: 'humano', poi: 'cantina' }, intro: [
+      IM('Gris (CT-7713)', 'Fui soldado clon. Cuando llegó la Orden 66… no disparé. Llevo doce años escondido en los criaderos.'),
+      IM('Gris (CT-7713)', 'Un escuadrón de la OSI ha venido a por mí. Están en el hangar. Soy viejo, Jedi. Los clones envejecemos rápido.') ], steps: [
+    { k: 'kill', pl: 'kamino', poi: 'hangar', n: 4, foe: 'mix', near: 50, text: 'Detén al escuadrón de la OSI en el hangar' },
+    { k: 'talk', pl: 'kamino', poi: 'cantina', npc: { name: 'Gris (CT-7713)', species: 'humano', id: 'gris2' }, lines: [IM('Gris (CT-7713)', 'Un Jedi salvándole la vida a un clon. El general Kenobi se reiría.'), IM('Gris (CT-7713)', 'Si alguna vez necesitas a un viejo soldado, búscame en Yavin 4. Siempre quise ver la selva.')] },
+  ], reward: { xp: 220, cr: 60, al: 6, rep: { resistencia: 4, imperio: -3 } } },
+  jed_reliquia: { pl: 'jedha', title: 'El guardián ciego', giver: { name: 'Hermano Oaren', species: 'humano', poi: 'plaza' }, intro: [
+      IM('Hermano Oaren', 'No te veo, pero te oigo: caminas como alguien que lleva un cristal en el cinturón.'),
+      IM('Hermano Oaren', 'Los imperiales se llevaron del templo el Corazón de Jedha, un kyber sagrado. Está en su puesto. Tráelo, por favor.') ], steps: [
+    { k: 'item', pl: 'jedha', poi: 'garrison', obj: 'relic', color: 0x2af0ff, label: 'Recuperar el Corazón de Jedha', guards: 4, text: 'Recupera el kyber sagrado del puesto imperial' },
+    { k: 'choice', prompt: 'El Corazón de Jedha late en tu mano. Es un kyber cian perfecto.', opts: [
+      { t: 'Devolverlo al templo', al: 6, lines: [IM('Hermano Oaren', 'La Fuerza está conmigo, y yo con la Fuerza. Y hoy, contigo.')] },
+      { t: 'Quedártelo para tu sable', al: -4, fn: () => { let e = SABER_COLORS.find(c => c.id === 'cian'); if (!e){ e = { id: 'cian', name: 'cian', hex: 0x2af0ff, have: true, extra: true }; SABER_COLORS.push(e); } e.have = true; toast('CRISTAL CIAN', 'K: cambiar color', 2.5); } } ] },
+  ], reward: { xp: 200, cr: 40, rep: { imperio: -3 } } },
+  ald_refugio: { pl: 'alderaan', title: 'El refugio del lago', giver: { name: 'Lady Venna', species: 'humano', poi: 'plaza' }, intro: [
+      IM('Lady Venna', 'La Casa Real esconde a treinta refugiados de Kashyyyk en la Posada del Lago. Unos inspectores imperiales acaban de aterrizar en el mirador.'),
+      IM('Lady Venna', 'Si los encuentran, Alderaan perderá su neutralidad. Y la vida de todos ellos.') ], steps: [
+    { k: 'kill', pl: 'alderaan', poi: 'ruins', n: 3, foe: 'mix', near: 50, text: 'Intercepta a los inspectores imperiales en el mirador' },
+    { k: 'talk', pl: 'alderaan', poi: 'cantina', npc: { name: 'Lady Venna', species: 'humano', id: 'venna2' }, lines: [IM('Lady Venna', 'Nadie sabrá qué pasó en el mirador. Ni siquiera yo. Gracias, Jedi.')] },
+  ], reward: { xp: 200, cr: 150, rep: { resistencia: 8, imperio: -4 } } },
+  ilu_eco: { pl: 'ilum', title: 'El padawan perdido', giver: { name: 'Minera Dessa', species: 'humano', poi: 'cantina' }, intro: [
+      IM('Minera Dessa', 'En el fondo de la cueva hay un niño. Un niño que brilla. Los mineros ya no bajan. Dicen que es un fantasma.') ], steps: [
+    { k: 'goto', pl: 'ilum', poi: 'cave', r: 6, text: 'Baja al fondo de la cueva de los cristales' },
+    { k: 'cine', lines: [D('Eco de un padawan', 'Vine a buscar mi cristal el día de la Purga. Nunca salí.'), D('Eco de un padawan', '¿Has encontrado tú el tuyo? ¿Sabes ya quién eres?')] },
+    { k: 'choice', prompt: 'El eco espera tu respuesta.', opts: [ { t: '«Soy un Jedi. Y ya puedes descansar.»', al: 6 }, { t: '«Aún no lo sé.»', lines: [D('Eco de un padawan', 'Nadie lo sabe del todo. Buen viaje.')] }, { t: '«Soy lo que necesite ser para ganar.»', al: -6 } ] },
+  ], reward: { xp: 260, cr: 0 } },
+  mus_mineros: { pl: 'mustafar', title: 'Los mineros de Mustafar', giver: { name: 'Capataz Oerl', species: 'humano', poi: 'cantina' }, intro: [
+      IM('Capataz Oerl', 'Los Inquisidores han encadenado a mis mineros en la pasarela de la refinería por «insolencia». Si los dejan allí una noche más, el calor los matará.') ], steps: [
+    { k: 'rescue', pl: 'mustafar', poi: 'ruins', name: 'los mineros', guards: 4, text: 'Libera a los mineros de la pasarela de la refinería', thanks: '¡Agua! ¡Por las estrellas, agua!' },
+  ], reward: { xp: 240, cr: 100, al: 5, rep: { resistencia: 5, imperio: -4 } } },
+  geo_colmena: { pl: 'geonosis', title: 'La colmena vacía', giver: { name: 'Técnico imperial Brask', species: 'humano', poi: 'plaza' }, intro: [
+      IM('Técnico imperial Brask', 'Oficialmente, aquí no queda nadie vivo. Extraoficialmente… algo emite una señal desde las colmenas. Me pagan por no mirar. A ti no.') ], steps: [
+    { k: 'kill', pl: 'geonosis', poi: 'wild', n: 3, foe: 'beast', near: 60, hostile: false, text: 'Adéntrate en las colmenas vacías' },
+    { k: 'item', pl: 'geonosis', poi: 'wild', obj: 'relic', color: 0xff9a3a, label: 'Recoger el huevo geonosiano que late', text: 'Encuentra el origen de la señal' },
+    { k: 'choice', prompt: 'Es un huevo. Vivo. Quizá el último de su especie.', opts: [ { t: 'Llevarlo a un lugar seguro, lejos del Imperio', al: 6 }, { t: 'Vendérselo a un coleccionista (+600 cr)', al: -6, cr: 600 }, { t: 'Destruirlo: lo que hizo el Imperio, hecho está', al: -2 } ] },
+  ], reward: { xp: 240, cr: 0 } },
+  dag_cueva: { pl: 'dagobah', title: 'La cueva del árbol oscuro', giver: { name: 'Ermitaño del pantano', look: CL.hermit, poi: 'hut', scale: 0.46 }, intro: [
+      D('Ermitaño del pantano', 'Ese lugar… fuerte con el lado oscuro es. Dominio del mal. Entrar debes.'),
+      D('Ermitaño del pantano', 'Tu sable… no lo necesitarás.') ], steps: [
+    { k: 'goto', pl: 'dagobah', poi: 'landmark', r: 9, text: 'Entra en la cueva del árbol oscuro' },
+    { k: 'choice', prompt: 'A la entrada de la cueva, tu mano busca el sable.', opts: [
+      { t: 'Dejar el sable fuera', al: 10, set: { caveNoSaber: true }, lines: [ME('(Dentro solo hay oscuridad… y tu propia respiración. Al salir, te sientes más ligero.)')] },
+      { t: 'Entrar con el sable encendido', set: { caveSaber: true } } ] },
+    { k: 'boss', pl: 'dagobah', poi: 'landmark', near: 20, if: () => SAGA.flags.caveSaber, boss: { name: 'Tu reflejo', look: 'exor', hp: 200, dmg: 1.1, lines: [SI('Tu reflejo', '(Una figura con tu forma, envuelta en negro. Su voz es la tuya.) ¿Esto es lo que buscabas?')] }, text: 'Enfréntate a lo que te espera en la cueva',
+      after: [ME('(La máscara del reflejo cae. Debajo… está tu cara.)')] },
+  ], reward: { xp: 300, cr: 0 } },
+  kor_holocron: { pl: 'korriban', title: 'El holocrón de Ajunta Pall', giver: { name: 'Buscador de reliquias', species: 'humano', poi: 'plaza' }, intro: [
+      IM('Buscador de reliquias', 'En la tumba de Ajunta Pall hay un holocrón sith. Yo no me atrevo a tocarlo. Tú… tú pareces de los que sí.') ], steps: [
+    { k: 'kill', pl: 'korriban', poi: 'cantina', n: 3, foe: 'beast', near: 60, hostile: false, text: "Aparta a los tuk'ata de la tumba de Ajunta Pall" },
+    { k: 'item', pl: 'korriban', poi: 'cantina', obj: 'relic', color: 0xff2a1a, label: 'Tomar el holocrón sith', text: 'Toma el holocrón de la tumba' },
+    { k: 'choice', prompt: 'El holocrón susurra promesas de poder.', opts: [
+      { t: 'Absorber su conocimiento (daño del sable +15%)', al: -15, fn: () => { RPG.dmg *= 1.15; toast('PODER OSCURO', 'daño del sable +15%', 3); } },
+      { t: 'Destruirlo', al: 10, lines: [ME('(El holocrón se agrieta y grita. Luego, silencio.)')] } ] },
+  ], reward: { xp: 260, cr: 0 } },
+  yav_templo: { pl: 'yavin', title: 'El templo menor', giver: { name: 'Gris (CT-7713)', species: 'humano', poi: 'plaza' }, requires: () => SAGA.sdone && SAGA.sdone.kam_clon, intro: [
+      IM('Gris (CT-7713)', '¡Jedi! Te dije que vendría a ver la selva. El templo pequeño de allí tiene inscripciones massassi. Y algo que brilla.') ], steps: [
+    { k: 'item', pl: 'yavin', poi: 'ruins', obj: 'relic', color: 0xffd23a, label: 'Recoger el cristal massassi', text: 'Explora el templo menor' },
+    { k: 'talk', pl: 'yavin', poi: 'plaza', npc: { name: 'Gris (CT-7713)', species: 'humano', id: 'gris3' }, lines: [IM('Gris (CT-7713)', 'Un cristal amarillo. Como el sable del Maestro… bueno, de un Maestro que conocí. Quédatelo.')] },
+  ], reward: { xp: 200, cr: 0, fn: () => { const e = SABER_COLORS.find(c => c.id === 'amarillo'); if (e){ e.have = true; toast('CRISTAL AMARILLO', 'K: cambiar color', 2.5); } } } },
+  tar_caidos: { pl: 'tarsis', title: 'Los caídos de Tarsis', giver: { name: 'Espíritu en la nieve', look: CL.ilyra, poi: 'plaza' }, requires: () => SAGA.flags.found_tarsis, intro: [
+      D('Espíritu en la nieve', '(Una silueta luminosa, apenas visible.) Nadie nos enterró. Seis años bajo la nieve.') ], steps: [
+    { k: 'item', pl: 'tarsis', poi: 'landmark', obj: 'relic', color: 0xbfe8ff, label: 'Encender una llama por los caídos', hold: 5, text: 'Honra a los Jedi caídos en el puesto en ruinas' },
+    { k: 'cine', lines: [D('Espíritu en la nieve', 'Gracias. Ahora podemos irnos. Dile a Ilyra… que no fue culpa suya.')] },
+  ], reward: { xp: 200, cr: 0, al: 6 } },
+};
+/* ---------- Motor de las secundarias (un hueco propio: TASKS.side) ---------- */
+function sideGivers(pid){
+  SAGA.sdone = SAGA.sdone || {};
+  for (const id in SIDEQ){ const Q = SIDEQ[id]; if (Q.pl !== pid || SAGA.sdone[id] || (SAGA.side && SAGA.side.id === id) || (Q.requires && !Q.requires())) continue;
+    const c = GS.pois[Q.giver.poi] || GS.pois.plaza; if (!c) continue;
+    const f = spawnGalFolk({ species: Q.giver.species || 'humano', look: Q.giver.look ? Object.assign({}, Q.giver.look) : null, pos: freeSpot(V3(c.x + rand(-4, 4), c.y, c.z + rand(-4, 4)), 2), name: Q.giver.name, idle: true, id: 'side_' + id, story: { mark: true, onTalk: () => offerSide(id, f) } });
+    if (Q.giver.scale) f.g.scale.setScalar(Q.giver.scale);
+    f.sideGiver = id;
+  }
+  if (SAGA.side && SIDEQ[SAGA.side.id] && TASKS.side){ const R = TASKS.side; R.spawned = false; R.ents = []; R.npc = null; if (R.def.pl === pid){ if (R.def.k === 'talk') spawnTalkNpc(R); if (['item', 'sabotage', 'rescue'].includes(R.def.k)) spawnTaskObj(R); } }
+}
+function offerSide(id, f){
+  const Q = SIDEQ[id];
+  if (SAGA.side){ sagaSay([IM(Q.giver.name, 'Veo que ya tienes un encargo entre manos. Vuelve cuando lo termines.')]); return; }
+  sagaSay(Q.intro, () => choose('«' + Q.title + '»', [
+    { t: 'Acepto', fn: () => { SAGA.side = { id, si: 0 }; if (f){ f.story = { mark: false, onTalk: () => bark(f.name, 'Gracias por ayudar.', 'imp', 2) }; } toast('MISIÓN SECUNDARIA', Q.title, 3); audio.blip(true); sideRunStep(); } },
+    { t: 'Ahora no puedo', fn: () => {} } ]));
+}
+function sideRunStep(){
+  const S = SAGA.side; if (!S) return; const Q = SIDEQ[S.id];
+  while (S.si < Q.steps.length && Q.steps[S.si].if && !Q.steps[S.si].if()) S.si++;
+  if (S.si >= Q.steps.length) return sideFinish();
+  const s = resolveStep(Q.steps[S.si]);
+  const next = () => { S.si++; TASKS.side = null; refreshSagaHUD(); saveGame(); setTimeout(sideRunStep, 250); };
+  if (s.k === 'cine'){ TASKS.side = null; sagaSay(s.lines, next); return; }
+  if (s.k === 'choice'){ TASKS.side = null; runChoice(s, next); return; }
+  if (s.k === 'fn'){ s.run(); next(); return; }
+  TASKS.side = mkRunner(s, next, 'side');
+  if (runnerOnPl(TASKS.side) && curArea === 'gal'){ if (s.k === 'talk') spawnTalkNpc(TASKS.side); if (['item', 'sabotage', 'rescue'].includes(s.k)) spawnTaskObj(TASKS.side); }
+  refreshSagaHUD();
+}
+function sideFinish(){
+  const S = SAGA.side, Q = SIDEQ[S.id], W = Q.reward || {};
+  SAGA.side = null; TASKS.side = null; SAGA.sdone[S.id] = true;
+  if (W.cr) SAGA.credits += W.cr; if (W.al) alignAdd(W.al, Q.title); for (const f in W.rep || {}) repAdd(f, W.rep[f]); if (W.fn) W.fn();
+  toast('MISIÓN SECUNDARIA COMPLETADA', Q.title + (W.xp ? ' · +' + W.xp + ' XP' : '') + (W.cr ? ' · +' + W.cr + ' cr' : ''), 3.5);
+  if (W.xp) gainXP(W.xp); updateAlignHUD(); refreshSagaHUD(); saveGame();
+}
+function sideObjective(){
+  const R = TASKS.side, S = SAGA.side; if (!S) return null; const Q = SIDEQ[S.id];
+  const h = R ? taskHint(R) : '';
+  return { id: 'side', text: '<b>' + Q.title + '</b> (secundaria)<br>' + (R ? taskText(R) : '…') + (h ? '<br><span style="opacity:.75;font-size:12px">' + h + '</span>' : ''), pos: R ? () => taskPos(R) : null };
+}
+/* Quien ofrece trabajo te llama cuando pasas cerca */
+function sideBarks(){
+  if (curArea !== 'gal' || G.lines) return;
+  for (const f of GS.folk){ if (!f.sideGiver || !f.story || !f.story.mark) continue; if (Math.hypot(f.pos.x - P.pos.x, f.pos.z - P.pos.z) < 7 && (f.barked || 0) < G.time - 60){ f.barked = G.time; bark(f.name, pick(['¡Eh, tú! ¿Tienes un momento?', 'Disculpa… ¿buscas trabajo?', 'Tú. Sí, tú. Necesito ayuda.', 'Por favor, escúchame un segundo.']), 'imp', 2.4); break; } }
+}
+
+/* ============================================================
+   HABILIDADES EN 3.ª PERSONA — el avatar hace lo mismo que se ve
+   en 1.ª persona: el sable lanzado sale de su mano y vuelve a ella,
+   la carga lo levanta en arco, el salto de Fuerza es una voltereta,
+   los poderes de la mano tienen su gesto y el camuflaje lo difumina.
+   ============================================================ */
+function tpAvatar(){ return P.disguised ? avatarDisg : avatar; }
+function tpThrowing(){ const a = tpAvatar(); return !!(G.tp && a && a.visible && avatarSaber && avatarSaber.parent); }
+/* Posición de la empuñadura del sable en la mano del avatar */
+function tpHandPos(v){ avatarSaber.updateWorldMatrix(true, false); return avatarSaber.getWorldPosition(v); }
+function tpSkillPose(root, u, dt){
+  const ry = root.rotation.y;
+  // Carga de Fuerza: el cuerpo vuela en arco con el sable en alto
+  if (SK.charge){ root.position.y += SK.chargeY || 0; u.armL.rotation.x = -2.7; u.armL.rotation.z = 0.1; u.armR.rotation.x = -2.4; u.armR.rotation.z = 0; u.body.rotation.x = -0.15; u.legL.rotation.x = -0.9; u.legR.rotation.x = 0.45; }
+  // Lanzamiento de sable: el brazo lanza, la otra mano guía el vuelo con la Fuerza y el sable vuelve a la mano
+  if (SK.throwS){
+    const T = SK.throwS, k = T.t/0.42;
+    if (avatarSaber) avatarSaber.visible = false;
+    const out = k < 0.3 ? eOut(k/0.3) : 1;
+    u.armL.rotation.x = lerp(-2.4, -1.5, out); u.armL.rotation.z = lerp(0.45, 0.05, out);
+    u.armR.rotation.x = -1.35 + Math.sin(G.time*14)*0.05; u.armR.rotation.z = -0.12;
+    u.body.rotation.x = -0.12*out;
+    if (k > 1.7){ const c = clamp((k - 1.7)/0.3, 0, 1); u.armL.rotation.x = lerp(-1.5, -1.15, c); u.armR.rotation.x = lerp(-1.35, -0.4, c); }
+  }
+  // Ráfaga: inclinado hacia delante y el sable atrás
+  if (SK.rafaga){ u.body.rotation.x = -0.35; u.armL.rotation.x = 0.9; u.armL.rotation.z = 0.3; u.armR.rotation.x = 0.6; u.legL.rotation.x = -0.8; u.legR.rotation.x = 0.7; }
+  // Salto de Fuerza: voltereta hacia delante alrededor de la cadera
+  const flip = SK.jumpT >= 0 && P.air ? eInOut(clamp((P.airT - 0.05)/0.7, 0, 1)) : 0;
+  if (flip > 0 && flip < 1){
+    const th = flip*Math.PI*2, h = 1.0*sizeRatio(LOOK), dz = -h*Math.sin(th);
+    root.rotation.order = 'YXZ'; root.rotation.x = th;
+    root.position.y += h - h*Math.cos(th); root.position.x += Math.sin(ry)*dz; root.position.z += Math.cos(ry)*dz;
+    u.legL.rotation.x = u.legR.rotation.x = -1.3*Math.sin(flip*Math.PI); u.armR.rotation.x = -1.2*Math.sin(flip*Math.PI);
+  } else root.rotation.x = 0;
+  // Gestos de las demás habilidades (0,8 s)
+  const S = SK.pose;
+  if (S && G.time - S.t0 < 0.8){
+    const t = (G.time - S.t0)/0.8, w = Math.sin(Math.min(1, t*1.6)*Math.PI*0.5)*(t > 0.7 ? 1 - (t - 0.7)/0.3 : 1);
+    const arm = (a, x, z) => { a.rotation.x = lerp(a.rotation.x, x, w); a.rotation.z = lerp(a.rotation.z, z, w); };
+    switch (S.id){
+      case 'atraccion': arm(u.armR, t < 0.35 ? -1.6 : -0.9, -0.05); u.body.rotation.x = lerp(u.body.rotation.x, t < 0.35 ? -0.06 : 0.14, w); break;
+      case 'estasis': arm(u.armR, -1.62 + Math.sin(G.time*40)*0.04, -0.1); break;
+      case 'truco': arm(u.armR, -1.95, -0.2 + Math.sin(t*10)*0.3); break;
+      case 'ola': arm(u.armR, -1.3, 1.15); if (!P.saberOn) arm(u.armL, -1.3, -1.15); root.position.y -= 0.14*w*(t < 0.3 ? 1 : 0.35); break;
+      case 'curacion': case 'resolucion': arm(u.armR, -0.55, 0.7); if (!P.saberOn) arm(u.armL, -0.55, -0.7); break;
+      case 'velocidad': case 'camuflaje': arm(u.armR, -1.0, -0.35); u.body.rotation.x = lerp(u.body.rotation.x, -0.12, w); break;
+    }
+  }
+  // Camuflaje de la Fuerza: el avatar se difumina (en 1.ª persona se ve el tinte de pantalla)
+  tpStealth(root, buffOn('stealth'));
+}
+function tpStealth(root, on){
+  if (!!root.userData.stealth === on) return;
+  root.userData.stealth = on;
+  const skip = new Set(); if (avatarSaber) avatarSaber.traverse(o => skip.add(o));
+  root.traverse(o => { if (!o.isMesh || !o.material || skip.has(o)) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]){
+      if (m.userData.baseOp == null){ m.userData.baseOp = m.opacity; m.userData.baseTr = m.transparent; }
+      m.transparent = on || m.userData.baseTr; m.opacity = on ? m.userData.baseOp*0.22 : m.userData.baseOp; m.depthWrite = !on; m.needsUpdate = true; } });
+}
+
+/* ============================================================
+   GUARDADO EXACTO — «Continuar partida» te devuelve justo donde
+   guardaste (zona, posición, orientación, objetivos, nave…) sin
+   cinemáticas. F5 guarda en cualquier momento; F9 carga.
+   ============================================================ */
+function saveWhere(){
+  const W = { area: curArea, phase: G.phase, ch: G.chapter, t: Date.now(), yaw: +P.yaw.toFixed(3), pitch: +P.pitch.toFixed(3), tp: !!G.tp,
+    pos: [+P.pos.x.toFixed(2), +P.pos.y.toFixed(2), +P.pos.z.toFixed(2)], label: savePlaceName() };
+  if (curArea === 'gal'){ W.pid = GS.pid; if (GS.inRoom) W.room = GS.inRoom.id; }
+  if (curArea === 'planet') W.inTower = !!G.inTower;
+  if (G.orbit){ W.orbit = true; W.orbitPid = OR.pid; }
+  if (G.fly || G.orbit) W.sp = { pos: SP.pos.toArray().map(v => +v.toFixed(2)), q: SP.q.toArray().map(v => +v.toFixed(5)), hull: SP.hull, shield: SP.shield, kills: SP.kills || 0, t: SP.t || 0, throttle: SP.throttle };
+  if (curArea === 'out' || curArea === 'sd' || curArea === 'space') W.obj = (G.objectives || []).map(o => ({ id: o.id, done: !!o.done, failed: !!o.failed }));
+  W.flags = { hasCode: !!G.hasCode, hasUniform: !!G.hasUniform, clearance: !!G.clearance, disguised: !!P.disguised, saberOn: !!P.saberOn };
+  return W;
+}
+function savePlaceName(){
+  try {
+    if (curArea === 'gal' && GS.pid){ const room = GS.inRoom ? GS.inRoom.name : null; let best = null, bd = 1e9; for (const k in GS.pois){ const p = GS.pois[k], d = Math.hypot(p.x - P.pos.x, p.z - P.pos.z); if (d < bd){ bd = d; best = k; } } return galName(GS.pid) + ' · ' + (room || (best && bd < 70 ? GS.names[best] || '' : 'afueras')); }
+    if (G.orbit) return 'Órbita de ' + galName(OR.pid);
+    if (curArea === 'planet') return 'Veyra · ' + (G.inTower ? 'Cámara del Consejo' : 'Templo del Alba');
+    if (curArea === 'sd') return SAGA.mode === 'vengador' ? 'A bordo del Vengador (asalto final)' : 'Capítulo 3 · A bordo del Vengador';
+    if (curArea === 'space') return 'Capítulo 4 · Huida del Vengador';
+    if (curArea === 'out') return G.chapter === 1 ? 'Capítulo 1 · La plataforma' : 'Capítulo 2 · La base imperial';
+  } catch (e) {}
+  return '';
+}
+function timeAgo(t){ const s = Math.max(0, (Date.now() - t)/1000); return s < 60 ? 'hace un momento' : s < 3600 ? 'hace ' + Math.round(s/60) + ' min' : s < 86400 ? 'hace ' + Math.round(s/3600) + ' h' : 'hace ' + Math.round(s/86400) + ' días'; }
+function refreshContinueBtn(){
+  const b = $('continueBtn'); if (!b) return; const sv = loadSave();
+  b.style.display = sv ? '' : 'none';
+  if (sv){ const W = sv.where || {}; b.innerHTML = 'Continuar partida' + (W.label ? `<small style="display:block;font-size:11px;opacity:.75;letter-spacing:1px;margin-top:3px">${W.label}${W.t ? ' — ' + timeAgo(W.t) : ''}</small>` : ''); }
+}
+/* Decide en qué capítulo/zona hay que reconstruir el mundo (también para partidas antiguas) */
+function continueFromSave(sv){
+  if (!sv) return;
+  const W = sv.where || {}, S = sv.saga || (sv.saga = {});
+  let ch;
+  if (W.area){
+    if (W.area === 'gal' && W.pid && GALAXY[W.pid]){ ch = 6; S.mode = 'gal'; S.where = W.pid; sv.gpos = [W.pos[0], W.pos[2]]; }
+    else if (W.orbit && W.orbitPid && GALAXY[W.orbitPid]){ ch = 6; S.mode = 'orbit'; S.where = W.orbitPid; }
+    else if (W.area === 'sd' && S.on && S.mode === 'vengador') ch = 6;
+    else if (W.area === 'planet'){ ch = S.on ? 6 : 5; if (S.on){ S.mode = 'veyra'; S.where = 'veyra'; } sv.pos = [W.pos[0], W.pos[2]]; }
+    else ch = clamp(W.ch || sv.ch || 1, 1, 4);
+  } else {
+    // partida guardada con una versión anterior
+    if (S.on && S.mode && S.mode !== 'veyra') ch = 6;
+    else if (sv.gpos && S.where && GALAXY[S.where] && S.where !== 'veyra'){ ch = 6; S.mode = 'gal'; }
+    else ch = sv.ch >= 5 ? (S.on ? 6 : 5) : Math.max(1, sv.ch || 1);
+  }
+  G.resuming = true;
+  try { startGame(ch, ch === 1, sv); } catch (e) { console.error(e); }
+  try { restoreWhere(sv); } catch (e) { console.error(e); }
+  G.resuming = false;
+  // si algo falló y seguimos en el menú, no dejar al jugador mirando el fondo
+  if (G.phase === 'menu'){ try { startGame(ch >= 5 ? ch : 1, false, sv); } catch (e) { console.error(e); } }
+  toast('PARTIDA CARGADA', (sv.where && sv.where.label) || '', 2.4);
+}
+/* Tras reconstruir la zona: posición exacta, orientación, objetivos, nave */
+function restoreWhere(sv){
+  const W = sv && sv.where; if (!W || !W.pos) return;
+  const [x, y, z] = W.pos;
+  if (W.tp != null) G.tp = W.tp;
+  P.yaw = W.yaw ?? P.yaw; P.pitch = W.pitch ?? 0; P.vel.set(0, 0, 0); P.vy = 0; P.air = false;
+  if (W.area === 'planet'){ G.inTower = !!W.inTower; P.pos.set(x, G.inTower ? y : planetGround(x, z), z); }
+  else if (W.area === 'gal'){ P.pos.set(x, galH(x, z), z); if (GS.safe) GS.safe.copy(P.pos); }
+  else if (W.area === 'out' || W.area === 'sd'){ if (G.chapter !== 1) P.pos.set(x, y, z); }
+  if (W.sp && (G.fly || G.orbit)){ SP.pos.fromArray(W.sp.pos); SP.q.fromArray(W.sp.q).normalize(); SP.hull = W.sp.hull ?? SP.hull; SP.shield = W.sp.shield ?? SP.shield; SP.kills = W.sp.kills || 0; SP.t = Math.max(SP.t || 0, W.sp.t || 0); SP.throttle = W.sp.throttle ?? SP.throttle; for (const k in SP.barks || {}) SP.barks[k] = true; }
+  if (W.obj && G.objectives){ for (const o of W.obj){ const ob = G.objectives.find(q => q.id === o.id); if (ob){ ob.done = ob.done || o.done; if (o.failed) ob.failed = true; } } renderObjectives(); }
+  const F = W.flags || {};
+  if (W.area === 'out' && G.chapter === 2){
+    if (F.hasCode){ G.hasCode = true; if (baseTerminalScreen) baseTerminalScreen.material = new THREE.MeshBasicMaterial({ color: hot(0x3acc70, 0.75) }); }
+    if (F.hasUniform){ G.hasUniform = true; setDisguise(!!F.disguised); }
+  }
+  if (W.area === 'sd' && G.chapter === 3 && F.clearance) G.clearance = true;
+  if (F.saberOn && !P.disguised && curArea !== 'space'){ P.saberOn = true; P.igniteK = 1; }
+  camera.position.set(P.pos.x, P.pos.y + P.eye, P.pos.z);
+}
+/* F5 guardar · F9 cargar */
+function quickSave(){
+  if (G.phase === 'menu' || G.endShown){ return; }
+  if (P.dead){ toast('NO SE PUEDE GUARDAR', 'no mientras estás caído', 1.8); audio.blip(false); return; }
+  saveGame(); const sv = loadSave();
+  if (!sv){ toast('ERROR AL GUARDAR', 'el navegador no permite guardar (¿modo privado?)', 3); return; }
+  toast('PARTIDA GUARDADA', (sv.where && sv.where.label) || '', 2.2); audio.blip(true);
+  const ic = $('saveIcon'); if (ic){ ic.classList.remove('on'); void ic.offsetWidth; ic.classList.add('on'); }
+}
+addEventListener('keydown', e => {
+  if (e.code === 'F5'){ e.preventDefault(); e.stopPropagation(); quickSave(); }
+  else if (e.code === 'F9'){ e.preventDefault(); e.stopPropagation(); const sv = loadSave(); if (!sv){ toast('NO HAY PARTIDA GUARDADA', 'pulsa F5 para guardar', 2); return; } ['pause', 'end'].forEach(id => $(id).classList.remove('on')); G.paused = false; continueFromSave(sv); }
+}, true);
+
+
+/* Acceso de depuración (pruebas automáticas) */
+window.__gal = { SP, saveGame, loadSave, continueFromSave, quickSave, SK, doSkill, useSkill, tpHandPos, tpThrowing, get avatarSaber(){ return avatarSaber; }, get avatar(){ return avatar; }, LOOK, RPG, SIDEQ, offerSide, sideRunStep, sideGivers, galTaskInteract, poiPos, COMPANIONS, recruit, dismissCompanion, sabaccHand, brawlStart, hunterTick, agentsInit, repAdd, bountyLevel, npcHit, talkTo, advanceLines, computeInteract, tryInteract, updateInteract: typeof updateInteract === "function" ? updateInteract : null, renderer, scene, camera, quality, SAGA, GS, OR, TASKS, GALAXY, SAGA_CH, enterSurface, enterOrbit, buildSurface, sagaStartChapter, sagaRunStep, sagaBegin, galJump, startLanding, openGalMap, closeGalMap, choose, pickChoice, galTakeoff, veyraTakeoff, startSagaFresh, boardVengador, setupVengadorFinal, leaveVengador, informantTalk, acceptContract, contractDone, galInteract, galTalk, runTalk, taskText, sagaObjectives, galDominion, alignAdd, P, G, npcs, sith, folk, WORLD, PLACES, keys, sim(sec){ for (let t = 0; t < sec; t += 1/30) if (!G.paused) step(1/30); } };
 
 /* ============================================================
    BUCLE PRINCIPAL
@@ -10279,6 +11123,7 @@ hudGameplay(false);
 animate();
 window.__ext = () => { outdoor.visible = false; sdGroup.visible = false; shipExt.visible = true; applyPreset('space'); };
 if (loadSave()) $('continueBtn').style.display = '';
+try { refreshContinueBtn(); } catch (e) {}
 window.__game = { useSkill, SK, RPG_: () => RPG, orbitFleet, FORMS, formPoseAt, applyUMEvent, lifeStep, setWeather, PLACES, MM, tryAttack, WIKI, wikiContext: (f, t) => wikiContext(f, t, []), LOOK, openCreator, applyLook, AIC, MEM, openChat, applyAction, speeders, updateFolk, SP, QS, folk, WORLD, RPG, varkas, planetH, talkTo, gainXP, setupSpace, setupPlanet, startHyperspace, spawnEnemy, TEMPLE, PAD, COLS, platformGateCol, audio, G, P, sith, npcs, startGame, SD, camera, keys, objById, sim(sec){ for (let t = 0; t < sec; t += 1/30) if (!G.paused) step(1/30); }, tryInteract, advanceLines, BREACH_POS, TERMINAL_POS, HANGAR_SHUTTLE, L, O };
 </script>
 </body>
