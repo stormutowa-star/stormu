@@ -319,7 +319,7 @@ body.flying #mmWrap{display:none}
 <label><input id="aiOn" type="checkbox"> IA activada</label>
 <label>Clave de API de Tavily (búsqueda de lore de Star Wars en segundo plano)</label><input id="tvKey" type="password" placeholder="tvly-...">
 <label><input id="tvOn" type="checkbox"> Buscar lore en internet en cada conversación</label>
-<label><input id="umOn" type="checkbox"> Maestro del Universo (la Fuerza mueve el mundo con IA cada pocos minutos)</label>
+<label><input id="umOn" type="checkbox"> Maestro del Universo: la IA mueve Veyra y toda la galaxia (noticias, batallas, encargos, reacciones a lo que haces). Sin IA, el director propio del juego lo hace igualmente.</label>
 <label>Minutos entre sucesos del Maestro del Universo</label><input id="umMin" type="text" style="width:80px">
 <div class="r" style="margin-top:14px"><button class="btn" id="aiSave">Guardar</button><button class="btn small" id="aiWipe">Borrar memorias</button><button class="btn small" id="aiClose">Cerrar</button></div>
 <div id="aiMsg"></div><div class="note">Para el mejor rol elige un modelo grande de chat (familias Claude, GPT, Gemini, DeepSeek, Llama 70B o superior). Los modelos pequeños o gratuitos responden peor y fallan más.</div><div class="note">La clave y las memorias se guardan solo en este navegador. Cada frase que envías consume una petición del modelo elegido.</div></div></div>
@@ -378,7 +378,7 @@ body.flying #mmWrap{display:none}
     <b>J</b><span>Diario: misiones, reputación y HoloRed</span><b>T / K</b><span>Seguir misión / color del sable</span>
     <b>L</b><span>Mapa galáctico (en órbita) · H: saltar</span><b>5</b><span>Poder de Luz u Oscuridad</span>
     <b>1 – 4</b><span>Elegir en las decisiones</span><b>E</b><span>Despegar desde tu nave</span>
-    <b>F5</b><span>Guardar partida</span><b>F9</b><span>Cargar la última partida guardada</span>
+    <b>F5</b><span>Guardar partida</span><b>F9</b><span>Cargar la última partida guardada</span><b>Intro</b><span>Saltar una cinemática</span>
   </div>
   <div class="opt">Sensibilidad del ratón <input type="range" id="sens" min="0.4" max="2.5" step="0.1" value="1"></div>
 </div>
@@ -6588,8 +6588,8 @@ addEventListener('keydown', e => {
 });
 const _tpA = new THREE.Vector3(), _tpB = new THREE.Vector3();
 function updateAvatar(dt){
-  const onFoot = !G.cine && !G.fly && !G.riding && !P.dead && G.phase !== 'menu' && G.phase !== 'end';
-  const show = G.tp && onFoot;
+  const onFoot = (!G.cine || G.cine.showAvatar) && !G.fly && !G.riding && !P.dead && G.phase !== 'menu' && G.phase !== 'end';
+  const show = (G.tp || !!(G.cine && G.cine.showAvatar)) && onFoot;
   const a = P.disguised ? avatarDisg : avatar, other = P.disguised ? avatar : avatarDisg;
   if (!a) return;
   other.visible = false; a.visible = show;
@@ -6611,6 +6611,7 @@ function updateAvatar(dt){
   tpSaberPose(a, u, dt, spd);
   animateTail(u, G.time, spd);
   u.neck.rotation.x = clamp(-P.pitch, -0.5, 0.5);
+  if (G.cine) return;   // en las cinemáticas la cámara la lleva el director
   // cámara por encima del hombro, sin atravesar paredes
   updateCamBasis();
   const sk = sizeRatio(LOOK), camK = 0.5 + 0.5*sk;   // personajes pequeños (especie de Yoda): cámara más baja y más cerca
@@ -9218,7 +9219,7 @@ function spawnTaskObj(R){
   R.spawned = true; const d = R.def, c = poiPos(d); if (!c) return;
   const area = curArea, rm = area === 'gal' ? roomAt(c.x, c.z) : null, base = d.k === 'rescue' && rm && rm.cellSpot ? rm.cellSpot : c;
   const fs = freeSpot(V3(base.x + (base === c ? d.dx || 0 : 0), c.y, base.z + (base === c ? d.dz || 0 : 0)));
-  if (d.k === 'rescue'){ const pr = spawnGalFolk({ species: d.species || 'humano', pos: fs, name: d.name || pick(GAL_NAMES), binders: true, idle: true, story: { mark: true, onTalk: f => { if (!f.freed) bark(f.name, '¡Sácame de aquí! (mantén E para romper las esposas)', 'imp', 2.5); } } }); R.prisoner = pr; }
+  if (d.k === 'rescue'){ const pr = spawnGalFolk({ species: d.species || 'humano', look: d.look || (!d.species || d.species === 'humano' ? cineLookFor(d.name, true) : null), pos: fs, name: d.name || pick(GAL_NAMES), binders: true, idle: true, story: { mark: true, onTalk: f => { if (!f.freed) bark(f.name, '¡Sácame de aquí! (mantén E para romper las esposas)', 'imp', 2.5); } } }); R.prisoner = pr; }
   else { const kind = d.k === 'sabotage' ? 'generator' : d.obj || 'relic'; const o = spawnGalObj(kind, fs, { color: d.color }); R.ents.push(o); }
   if (d.guards){ GS.hostile = d.hostile !== false; spawnFoes(R, c, d.guards, d.foe || 'mix', area).forEach(e => e.task = null); }
   refreshSagaHUD();
@@ -9241,11 +9242,11 @@ function runTalk(R, f){
   if (R.done || R.talking) return; R.talking = true;
   if (f) f.talking = true;
   const d = R.def;
-  sagaSay(d.lines, () => {
+  (R.tag === 'story' ? cineSay : sagaSay)(d.lines, () => {
     if (f) f.talking = false;
     const fin = () => { R.talking = false; if (f && d.leave){ f.story = null; f.idle = false; } else if (f) f.story = { mark: false, onTalk: () => sagaSay([D(f.name, d.idleLine || pick(['Buena suerte.', 'Que la Fuerza te acompañe.', 'No pierdas tiempo.']), 'imp')]) }; finishRunner(R); };
     if (d.choice) runChoice(d.choice, fin); else fin();
-  });
+  }, { ents: f ? [f] : [] });
 }
 function runChoice(ch, done){ const opts = (typeof ch.opts === 'function' ? ch.opts() : ch.opts); choose(typeof ch.prompt === 'function' ? ch.prompt() : ch.prompt, opts, (o) => { if (o.go) SAGA.jump = o.go; if (o.ch) SAGA.nextOverride = o.ch; done && done(o); }); }
 /* Duelos contra jefes (reutilizan el duelo de Vex) */
@@ -9302,7 +9303,7 @@ function sagaRunStep(){
   if (s.onStart) s.onStart();
   const next = () => { SAGA.si++; TASKS.story = null; refreshSagaHUD(); saveGame(); setTimeout(sagaRunStep, 250); };
   switch (s.k){
-    case 'cine': TASKS.story = null; refreshSagaHUD(); sagaSay(s.lines, next); return;
+    case 'cine': TASKS.story = null; refreshSagaHUD(); playCine(s, next); return;
     case 'choice': TASKS.story = null; refreshSagaHUD(); runChoice(s, next); return;
     case 'fn': s.run(); next(); return;
     case 'end': showEnding(typeof s.ending === 'function' ? s.ending() : s.ending); return;
@@ -9351,6 +9352,7 @@ function sagaRumors(){
   if (F.veyraFallen) out.push('Corre el rumor de que el Imperio encontró un templo Jedi escondido en el Borde. Lo quemaron.');
   if (F.archive) out.push('En Coruscant alguien entró en el Archivo Imperial. La OSI está furiosa.');
   if (SAGA.align <= -50) out.push('Cuentan historias de un Jedi que se volvió oscuro… dicen que tiene ojos de fuego.');
+  out.push(...(SAGA.dirRumors || []).slice(0, 4));
   return out;
 }
 /* ---------- Objetivos en el HUD ---------- */
@@ -9395,6 +9397,7 @@ function taskPos(R){
 }
 function refreshSagaHUD(){
   if (!SAGA.on) return;
+  dirRegister();
   if (curArea === 'planet'){ refreshQuestHUD(); return; }
   setObjectives(sagaObjectives());
 }
@@ -9610,7 +9613,7 @@ a3_1: { act: 'III', title: 'Fuego sobre Veyra', sub: 'El Vengador ha encontrado 
   { k: 'boss', pl: 'veyra', at: () => WORLD.hallDoor, near: 26, boss: { name: 'Hermano Vorn', look: 'inquisidor', hp: 230, dmg: 1.05, lines: [
     SI('Hermano Vorn', 'El Templo del Alba. Mil años escondido… y ha bastado una lanzadera para encontrarlo.'),
     SI('Hermano Vorn', 'Tu Gran Maestra tiene una cita en la torre. Tú tienes una conmigo.')] }, text: 'Derrota al Inquisidor que guarda la sala del Consejo' },
-  { k: 'cine', lines: () => [
+  { k: 'cine', live: ['Darth Exor', 'Maestra Sael Varo', 'Gran Maestra Ilyra Venn'], lines: () => [
     ME('(Subes a la Cámara del Consejo. El ascensor tarda una eternidad.)'),
     SI('Darth Exor', 'Por fin. El Jedi que me trajo hasta aquí. Tienes mi gratitud.'),
     SI('Darth Exor', 'Maestra Venn… ha envejecido. Yo también, supongo.'),
@@ -9634,7 +9637,7 @@ a3_2: { act: 'III', title: 'La traidora', sub: 'Veyra', steps: [
       { t: 'Te perdono. Ayúdanos a salvar a Ilyra… y a Davin.', al: 15, set: { saelForgiven: true }, lines: [D('Maestra Sael Varo', '(Llorando.) No lo merezco. Pero no te fallaré. Nunca más.')] },
       { t: 'El Consejo te juzgará. Hasta entonces, irás encadenada.', al: 2, set: { saelPrisoner: true }, lines: [D('Maestra Sael Varo', 'Es justo.')] },
       { t: 'Mataste a mi maestro. Y a Toren. Esto es justicia.', al: -25, set: { saelDead: true }, lines: [ME('(Tu sable desciende. Sael no se defiende.)'), D('Maestro Bren Aldric', '¡¿Qué has hecho?! ¡Eso no es justicia, es venganza!')] } ] } },
-  { k: 'cine', lines: [
+  { k: 'cine', live: ['Maestro Bren Aldric'], lines: [
     D('Maestro Bren Aldric', 'Se acabó el tiempo. El Vengador vuelve a disparar sobre la aldea. Hay que evacuar a los supervivientes.'),
     D('Maestro Bren Aldric', 'Kiona espera con los cruceros que quedan. Sube a tu nave y abre un pasillo.'),
     D('Maestro Bren Aldric', '¿Adónde vamos? Necesitamos un lugar que el Imperio no mire.') ] },
@@ -9748,7 +9751,7 @@ a5l_1: { act: 'V', title: 'El bastión de Mustafar', sub: 'Camino de la Luz', st
     SI('Inquisidora Sayne', 'La vieja maestra no ha dejado de meditar desde que llegó. Me pone de los nervios.'),
     SI('Inquisidora Sayne', 'Te enseñaré lo que hacemos los Inquisidores con los Jedi que llegan tarde.') ] }, text: 'Derrota a la Inquisidora que guarda el bastión' },
   { k: 'rescue', pl: 'mustafar', poi: 'landmark', name: 'Gran Maestra Ilyra Venn', guards: 2, dz: -2, thanks: 'Sabía que vendrías. Siempre llegáis tarde… pero llegáis.' },
-  { k: 'cine', lines: () => [
+  { k: 'cine', live: ['Gran Maestra Ilyra Venn'], lines: () => [
     D('Gran Maestra Ilyra Venn', 'Lo miré a los ojos, {nombre}. Es Corran. Mi Corran.'),
     ME('Me ofreció unirme a él para derrocar al Emperador.'),
     D('Gran Maestra Ilyra Venn', 'Y le dijiste que no. Bien.' + (SAGA.align >= 30 ? ' Brillas, ¿sabes? Hacía años que no veía a nadie brillar así.' : '')),
@@ -10005,7 +10008,7 @@ function sagaResume(){
   if (!SAGA.on || !SAGA.ch) return;
   TASKS.story = null; TASKS.contract = null; TASKS.side = null;
   if (SAGA.contract) contractRunner();
-  if (SAGA.side && SIDEQ[SAGA.side.id]) setTimeout(sideRunStep, 900);
+  if (SAGA.side && sideQ(SAGA.side.id)) setTimeout(sideRunStep, 900);
   setTimeout(() => sagaRunStep(), 700);
   updateAlignHUD();
 }
@@ -10038,6 +10041,7 @@ function sagaJournalHTML(){
     <div>Alineamiento: <b>${alignName(SAGA.align)}</b> (${SAGA.align}) · Créditos: <b>${SAGA.credits}</b> · Contratos cumplidos: <b>${SAGA.contractsDone || 0}</b></div>
     <div>Día galáctico <b>${gDay()}</b> · Dominio imperial de la galaxia: <b>${galDominion()}%</b>${bountyLevel() ? ' · <b style="color:#ff8a80">BUSCADO (nivel ' + bountyLevel() + ')</b>' : ''}</div>${SAGA.contract ? '<div>Contrato: ' + SAGA.contract.text + '</div>' : ''}</div>
     <h3 style="margin-top:10px">REPUTACIÓN</h3><div class="rep">${Object.keys(FACTIONS).map(k => { const v = repInit()[k]; return `<span>${FACTIONS[k]}</span><i><b style="${v >= 0 ? 'left:50%;width:' + v/2 + '%' : 'left:' + (50 + v/2) + '%;width:' + (-v/2) + '%;background:#ff6a5a'}"></b></i><span>${repLabel(v)}</span>`; }).join('')}</div>
+    ${Object.keys(SAGA.dirQuests || {}).filter(id => !(SAGA.side && SAGA.side.id === id)).length ? '<h3>TABLÓN DE ENCARGOS</h3>' + Object.entries(SAGA.dirQuests).filter(([id]) => !(SAGA.side && SAGA.side.id === id)).map(([id, q]) => `<div class="news" style="border-left-color:#ffd27a"><b>${q.title}</b> · ${galName(q.pl)} — pregunta por ${q.giver.name} (${{ plaza: 'plaza', cantina: 'cantina', market: 'mercado' }[q.giver.poi] || q.giver.poi})${q.until ? ' · hasta el día ' + q.until : ''}</div>`).join('') : ''}
     ${(SAGA.news || []).length ? '<h3>HOLORED</h3>' + SAGA.news.slice(0, 6).map(n => `<div class="news">Día ${n.d} · ${n.t}</div>`).join('') : ''}
     ${log ? '<h3 style="margin-top:10px">TUS DECISIONES</h3>' + log : ''}`;
 }
@@ -10812,29 +10816,29 @@ const SIDEQ = {
 };
 /* ---------- Motor de las secundarias (un hueco propio: TASKS.side) ---------- */
 function sideGivers(pid){
-  SAGA.sdone = SAGA.sdone || {};
+  SAGA.sdone = SAGA.sdone || {}; dirRegister();
   for (const id in SIDEQ){ const Q = SIDEQ[id]; if (Q.pl !== pid || SAGA.sdone[id] || (SAGA.side && SAGA.side.id === id) || (Q.requires && !Q.requires())) continue;
     const c = GS.pois[Q.giver.poi] || GS.pois.plaza; if (!c) continue;
     const f = spawnGalFolk({ species: Q.giver.species || 'humano', look: Q.giver.look ? Object.assign({}, Q.giver.look) : null, pos: freeSpot(V3(c.x + rand(-4, 4), c.y, c.z + rand(-4, 4)), 2), name: Q.giver.name, idle: true, id: 'side_' + id, story: { mark: true, onTalk: () => offerSide(id, f) } });
     if (Q.giver.scale) f.g.scale.setScalar(Q.giver.scale);
     f.sideGiver = id;
   }
-  if (SAGA.side && SIDEQ[SAGA.side.id] && TASKS.side){ const R = TASKS.side; R.spawned = false; R.ents = []; R.npc = null; if (R.def.pl === pid){ if (R.def.k === 'talk') spawnTalkNpc(R); if (['item', 'sabotage', 'rescue'].includes(R.def.k)) spawnTaskObj(R); } }
+  if (SAGA.side && sideQ(SAGA.side.id) && TASKS.side){ const R = TASKS.side; R.spawned = false; R.ents = []; R.npc = null; if (R.def.pl === pid){ if (R.def.k === 'talk') spawnTalkNpc(R); if (['item', 'sabotage', 'rescue'].includes(R.def.k)) spawnTaskObj(R); } }
 }
 function offerSide(id, f){
-  const Q = SIDEQ[id];
+  const Q = sideQ(id); if (!Q){ bark(f ? f.name : '…', 'Olvídalo. Ya se ha encargado otro.', 'imp', 2.4); if (f){ f.story = null; f.sideGiver = null; } return; }
   if (SAGA.side){ sagaSay([IM(Q.giver.name, 'Veo que ya tienes un encargo entre manos. Vuelve cuando lo termines.')]); return; }
   sagaSay(Q.intro, () => choose('«' + Q.title + '»', [
     { t: 'Acepto', fn: () => { SAGA.side = { id, si: 0 }; if (f){ f.story = { mark: false, onTalk: () => bark(f.name, 'Gracias por ayudar.', 'imp', 2) }; } toast('MISIÓN SECUNDARIA', Q.title, 3); audio.blip(true); sideRunStep(); } },
     { t: 'Ahora no puedo', fn: () => {} } ]));
 }
 function sideRunStep(){
-  const S = SAGA.side; if (!S) return; const Q = SIDEQ[S.id];
+  const S = SAGA.side; if (!S) return; const Q = sideQ(S.id); if (!Q){ SAGA.side = null; TASKS.side = null; return; }
   while (S.si < Q.steps.length && Q.steps[S.si].if && !Q.steps[S.si].if()) S.si++;
   if (S.si >= Q.steps.length) return sideFinish();
   const s = resolveStep(Q.steps[S.si]);
   const next = () => { S.si++; TASKS.side = null; refreshSagaHUD(); saveGame(); setTimeout(sideRunStep, 250); };
-  if (s.k === 'cine'){ TASKS.side = null; sagaSay(s.lines, next); return; }
+  if (s.k === 'cine'){ TASKS.side = null; playCine(s, next); return; }
   if (s.k === 'choice'){ TASKS.side = null; runChoice(s, next); return; }
   if (s.k === 'fn'){ s.run(); next(); return; }
   TASKS.side = mkRunner(s, next, 'side');
@@ -10842,14 +10846,14 @@ function sideRunStep(){
   refreshSagaHUD();
 }
 function sideFinish(){
-  const S = SAGA.side, Q = SIDEQ[S.id], W = Q.reward || {};
+  const S = SAGA.side, Q = sideQ(S.id) || { title: 'Encargo', reward: {} }, W = Q.reward || {};
   SAGA.side = null; TASKS.side = null; SAGA.sdone[S.id] = true;
   if (W.cr) SAGA.credits += W.cr; if (W.al) alignAdd(W.al, Q.title); for (const f in W.rep || {}) repAdd(f, W.rep[f]); if (W.fn) W.fn();
   toast('MISIÓN SECUNDARIA COMPLETADA', Q.title + (W.xp ? ' · +' + W.xp + ' XP' : '') + (W.cr ? ' · +' + W.cr + ' cr' : ''), 3.5);
   if (W.xp) gainXP(W.xp); updateAlignHUD(); refreshSagaHUD(); saveGame();
 }
 function sideObjective(){
-  const R = TASKS.side, S = SAGA.side; if (!S) return null; const Q = SIDEQ[S.id];
+  const R = TASKS.side, S = SAGA.side; if (!S) return null; const Q = sideQ(S.id); if (!Q) return null;
   const h = R ? taskHint(R) : '';
   return { id: 'side', text: '<b>' + Q.title + '</b> (secundaria)<br>' + (R ? taskText(R) : '…') + (h ? '<br><span style="opacity:.75;font-size:12px">' + h + '</span>' : ''), pos: R ? () => taskPos(R) : null };
 }
@@ -12790,6 +12794,587 @@ Object.assign(DRESS, {
 function pGlowExt(b, x, y, z, col, s = 0.4){ b.add(s, s*2, s, gglow(col, 1.8), x, y, z, false, false); }
 
 /* ============================================================
+   DIRECTOR GALÁCTICO · el «Maestro del Universo» de toda la galaxia
+   Cada pocas horas de juego mira el estado de la galaxia (control
+   imperial, agentes, tu reputación, tus decisiones recientes) y hace
+   que pasen cosas: noticias, batallas que cambian quién manda en un
+   mundo, movimientos de personajes, encargos nuevos con su propia
+   gente y reacciones a lo que has hecho.
+   Con la IA configurada (F1 → IA · Maestro del Universo) los sucesos
+   los escribe la IA; si no, un generador procedimental propio.
+   ============================================================ */
+const DIR = { busy: false, n: 0 };
+const DIR_POIS = ['plaza', 'cantina', 'market', 'garrison', 'ruins', 'wild', 'hangar', 'landmark'];
+const DIR_KINDS = ['rescate', 'sabotaje', 'eliminar', 'recuperar', 'mensaje'];
+function dirPlanets(){ return GAL_IDS.filter(k => { const P_ = GALAXY[k]; return !P_.space && k !== 'veyra' && (P_.species || []).length && !(P_.hidden && !SAGA.flags['found_' + k]); }); }
+function dirWarPlanets(){ return GAL_IDS.filter(k => !GALAXY[k].space && k !== 'veyra' && galCtl(k) > 2 && galCtl(k) < 100 && !(GALAXY[k].hidden && !SAGA.flags['found_' + k])); }
+/* ---------- Encargos dinámicos: se guardan en la partida y se registran como secundarias ---------- */
+function dirRegister(){
+  const Q = SAGA.dirQuests = SAGA.dirQuests || {}, day = gDay();
+  for (const id in Q){
+    const q = Q[id], active = SAGA.side && SAGA.side.id === id;
+    if ((SAGA.sdone || {})[id] && !active){ delete Q[id]; delete SIDEQ[id]; delete SAGA.sdone[id]; continue; }
+    if (!active && q.until != null && day > q.until){ delete Q[id]; delete SIDEQ[id]; continue; }
+    SIDEQ[id] = q;
+  }
+  for (const id in SIDEQ) if (SIDEQ[id].dyn && !Q[id]) delete SIDEQ[id];
+}
+function sideQ(id){ if (!SIDEQ[id] && SAGA.dirQuests && SAGA.dirQuests[id]) SIDEQ[id] = SAGA.dirQuests[id]; return SIDEQ[id]; }
+function dirOpenCount(){ return Object.keys(SAGA.dirQuests || {}).filter(id => !(SAGA.side && SAGA.side.id === id)).length; }
+const DIR_TXT = s => String(s || '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim();
+/* Construye un encargo a partir de datos sencillos (los valida: la IA no puede romper nada) */
+function dirBuildQuest(o){
+  const pl = GALAXY[o.pl] && dirPlanets().includes(o.pl) ? o.pl : null; if (!pl) return null;
+  const kind = DIR_KINDS.includes(o.kind) ? o.kind : 'rescate';
+  const spList = GALAXY[pl].species || ['humano'], sp = SPECIES_LOOK[o.species] ? o.species : pick(spList.filter(s => SPECIES_LOOK[s])) || 'humano';
+  const gname = DIR_TXT(o.giver).slice(0, 48) || pick(GAL_NAMES) + ', ' + pick(DIR_JOBS);
+  const gpoi = ['plaza', 'cantina', 'market'].includes(o.gpoi) ? o.gpoi : pick(['plaza', 'cantina', 'market']);
+  let poi = DIR_POIS.includes(o.poi) && o.poi !== gpoi ? o.poi : (kind === 'mensaje' ? pick(['hangar', 'cantina', 'plaza'].filter(p => p !== gpoi)) : pick(['garrison', 'ruins', 'wild', 'hangar']));
+  const target = DIR_TXT(o.target).slice(0, 40), place = () => (GS.pid === pl && GS.names && GS.names[poi]) || { garrison: 'la guarnición', ruins: 'las ruinas', wild: 'las afueras', hangar: 'los muelles', landmark: 'el lugar señalado', plaza: 'la plaza', cantina: 'la cantina', market: 'el mercado' }[poi];
+  const intro = (Array.isArray(o.intro) ? o.intro : [o.intro]).map(DIR_TXT).filter(Boolean).slice(0, 3).map(t => IM(gname, t.slice(0, 260)));
+  if (!intro.length) return null;
+  const steps = [], imp = galCtl(pl) > 40;
+  if (kind === 'rescate'){
+    if (o.guards !== 0) steps.push({ k: 'kill', pl, poi, n: clamp(+o.n || 3, 2, 5), foe: imp ? 'mix' : 'trooper', near: 60, text: `Acaba con quienes retienen a ${target || 'el prisionero'} (${place()})` });
+    steps.push({ k: 'rescue', pl, poi, name: target || pick(GAL_NAMES), guards: 0, thanks: DIR_TXT(o.thanks).slice(0, 160) || '¡Gracias! Creí que no saldría de aquí.' });
+  } else if (kind === 'sabotaje') steps.push({ k: 'sabotage', pl, poi: poi === 'plaza' ? 'garrison' : poi, what: target || 'el generador imperial', guards: clamp(+o.n || 3, 1, 5), text: `Sabotea ${target || 'el generador imperial'} (${place()})` });
+  else if (kind === 'eliminar') steps.push({ k: 'kill', pl, poi, n: clamp(+o.n || 4, 2, 6), foe: o.foe === 'beast' ? 'beast' : imp ? 'mix' : 'trooper', near: 60, hostile: o.foe === 'beast' ? false : undefined, text: `${target ? 'Acaba con ' + target : 'Limpia la zona'} (${place()})` });
+  else if (kind === 'recuperar') steps.push({ k: 'item', pl, poi, obj: o.obj === 'terminal' ? 'terminal' : 'relic', color: 0xffd27a, label: 'Recuperar ' + (target || 'el paquete'), guards: clamp(+o.n || 2, 0, 4), text: `Recupera ${target || 'el paquete'} (${place()})` });
+  else { const tn = target || pick(GAL_NAMES); steps.push({ k: 'talk', pl, poi, npc: { name: tn, species: pick(spList.filter(s => SPECIES_LOOK[s])) || 'humano', id: 'dirm' + DIR.n }, lines: [IM(tn, DIR_TXT(o.reply).slice(0, 200) || 'Recibido. Dile que lo haré. Y ahora vete, antes de que nos vean juntos.')] }); }
+  if (o.dilemma && o.dilemma.prompt && Array.isArray(o.dilemma.opts) && o.dilemma.opts.length >= 2)
+    steps.push({ k: 'choice', prompt: DIR_TXT(o.dilemma.prompt).slice(0, 160), opts: o.dilemma.opts.slice(0, 3).map(x => ({ t: DIR_TXT(x.t).slice(0, 110) || '…', al: clamp(Math.round(+x.al || 0), -12, 12), cr: clamp(Math.round(+x.cr || 0), 0, 400) || undefined })) });
+  steps.push({ k: 'talk', pl, poi: gpoi, npc: { name: gname, species: sp, id: 'dirg' + DIR.n }, lines: [IM(gname, DIR_TXT(o.thanks2).slice(0, 220) || pick(['No tengo mucho, pero esto es tuyo. Te lo has ganado.', 'Nunca olvidaré lo que has hecho. Nadie aquí lo olvidará.', 'Toma. Y si alguna vez vuelves, aquí tienes una puerta abierta.']))] });
+  const rep = {}; if (kind === 'sabotaje' || kind === 'rescate') { rep.resistencia = 3; rep.imperio = -3; } if (kind === 'recuperar') rep.contrabandistas = 2; if (pl === 'tatooine' || pl === 'bespin') rep.hutts = 1;
+  const id = 'dir_' + gDay() + '_' + (DIR.n++) + Math.random().toString(36).slice(2, 5);
+  return [id, { dyn: true, pl, until: gDay() + 6, title: DIR_TXT(o.title).slice(0, 60) || 'Un encargo en ' + galName(pl), giver: { name: gname, species: sp, poi: gpoi }, intro, steps,
+    reward: { xp: clamp(+o.xp || 150 + steps.length*30, 80, 320), cr: clamp(+o.cr || 60 + Math.floor(Math.random()*140), 20, 400), al: kind === 'rescate' ? 4 : kind === 'mensaje' ? 2 : 0, rep } }];
+}
+function dirAddQuest(o){
+  if (dirOpenCount() >= 4) return false;
+  const r = dirBuildQuest(o); if (!r) return false;
+  const [id, q] = r; if (Object.values(SAGA.dirQuests || {}).some(x => x.title === q.title)) return false; SAGA.dirQuests = SAGA.dirQuests || {}; SAGA.dirQuests[id] = q; SIDEQ[id] = q;
+  if (curArea === 'gal' && GS.pid === q.pl) sideGivers(q.pl);
+  newsPush('misc', `Tablón de la HoloRed · ${galName(q.pl)}: «${q.title}». Se busca a alguien de confianza; preguntar por ${q.giver.name}.`);
+  return true;
+}
+/* ---------- Aplicar sucesos (del generador o de la IA) ---------- */
+function dirApply(ev){
+  if (!ev || !ev.tipo) return;
+  const t = String(ev.tipo).toLowerCase(), txt = DIR_TXT(ev.texto).slice(0, 240);
+  switch (t){
+    case 'noticia': if (txt) newsPush(['imp', 'res', 'hutt', 'misc'].includes(ev.fuente) ? ev.fuente : 'misc', txt); break;
+    case 'batalla': {
+      const pid = ev.planeta; if (!dirWarPlanets().includes(pid)) return;
+      const d = clamp(Math.round(+ev.cambio || 5), 1, 12), res = ev.ganador === 'resistencia';
+      SAGA.ctl[pid] = clamp(galCtl(pid) + (res ? -d : d), 3, 99);
+      newsPush(res ? 'res' : 'imp', (txt || (res ? `Combates en ${galName(pid)}: la resistencia gana terreno.` : `El Imperio refuerza su dominio sobre ${galName(pid)}.`)) + ` Control imperial: ${galCtl(pid)}%.`);
+      worldEvent({ k: res ? 'resWin' : 'impWin', pid, d }); logEvent('Batalla en ' + galName(pid) + ': ' + (res ? 'avanza la resistencia' : 'avanza el Imperio') + '.'); break; }
+    case 'agente': {
+      const A = agentsInit(), a = A[ev.agente], pid = ev.planeta; if (!a || !a.alive || !['rhen', 'mara', 'kess', 'varr'].includes(ev.agente) || !dirPlanets().includes(pid) || a.at === pid) return;
+      a.at = pid; if (ev.agente === 'kess') a.arrive = gHour() + 3 + Math.random()*5;
+      if (txt) newsPush(ev.agente === 'varr' ? 'imp' : ev.agente === 'mara' ? 'res' : 'hutt', txt); break; }
+    case 'encargo': dirAddQuest({ pl: ev.planeta, kind: ev.objetivo, title: ev.titulo, giver: ev.quien, species: ev.especie, gpoi: ev.lugar_quien, poi: ev.lugar, target: ev.nombre_objetivo, intro: ev.intro, thanks: ev.gracias_rescatado, thanks2: ev.gracias, reply: ev.respuesta, n: ev.enemigos, foe: ev.enemigo, dilemma: ev.dilema && { prompt: ev.dilema.pregunta, opts: (ev.dilema.opciones || []).map(o => ({ t: o.t || o.texto, al: o.al || o.luz, cr: o.cr })) }, cr: ev.creditos }); break;
+    case 'reaccion': case 'reacción': {
+      if (!txt) return; const who = DIR_TXT(ev.quien).slice(0, 40) || 'Transmisión anónima';
+      if (G.control && !G.lines && !G.choice && !G.cine && !G.fly){ bark(who, txt, 'holo', 5.5); audio.blip(true); } else newsPush('misc', who + ': «' + txt + '»');
+      logEvent(who + ' reaccionó a tus actos: «' + txt.slice(0, 80) + '»'); break; }
+    case 'rumor': if (txt){ (SAGA.dirRumors = SAGA.dirRumors || []).unshift(txt); if (SAGA.dirRumors.length > 12) SAGA.dirRumors.pop(); } break;
+  }
+}
+/* ---------- Generador procedimental (sin IA) ---------- */
+const DIR_JOBS = ['mecánica', 'granjero', 'tabernera', 'piloto retirado', 'chatarrero', 'médica', 'contrabandista', 'minero', 'vendedora', 'estibador', 'profesor', 'curandera'];
+const DIR_Q = {
+  rescate: [
+    (p, g, n) => ({ title: `Sin noticias de ${n}`, target: n, intro: [`${n} salió a trabajar hace tres días y no volvió. Los imperiales se lo llevaron «para interrogarlo».`, `Si nadie hace nada, lo mandarán a las minas. O algo peor.`], thanks: '¿Me ha enviado mi familia? Vámonos antes de que vuelvan.' }),
+    (p, g, n) => ({ title: `Una deuda con sangre`, target: n, foe: 'trooper', intro: [`Unos matones retienen a ${n}. Dicen que le debe dinero a su jefe… mentira. Solo quieren un ejemplo.`, `Lo tienen en las afueras. No son muchos, pero van armados.`], thanks: 'Creía que nadie vendría. Gracias, de verdad.' }),
+  ],
+  sabotaje: [
+    (p) => ({ title: 'El ojo que todo lo ve', target: 'la antena de escucha imperial', intro: [`El Imperio ha montado una antena que escucha todas nuestras comunicaciones en ${galName(p)}.`, `Cada vez que alguien se queja por el comunicador, al día siguiente desaparece. Hay que tirarla abajo.`] }),
+    (p) => ({ title: 'Combustible para la guerra', target: 'el depósito de combustible', intro: [`Los cazas imperiales repostan aquí antes de bombardear los mundos vecinos.`, `Un depósito menos son muchas vidas más. Tú sabes hacer esas cosas, ¿verdad?`] }),
+  ],
+  eliminar: [
+    (p) => ({ title: 'Bestias en el camino', target: 'las bestias que atacan a los viajeros', foe: 'beast', intro: [`Algo baja por las noches y ataca a quien va por el camino. Ya van cuatro heridos.`, `Los imperiales dicen que no es su problema. Nunca lo es.`] }),
+    (p) => ({ title: 'La patrulla que cobra', target: 'la patrulla corrupta', intro: [`Una patrulla imperial «cobra peaje» a todo el que pasa. Al que no paga, le rompen algo.`, `No son muchos. Pero nadie se atreve.`] }),
+  ],
+  recuperar: [
+    (p) => ({ title: 'Lo que el Imperio requisó', target: 'la caja de medicinas', intro: [`Llegó un cargamento de medicinas para el barrio y el Imperio lo «requisó». Lo tienen almacenado.`, `Hay niños con fiebre. No te pido que hagas una guerra: solo que traigas la caja.`] }),
+    (p) => ({ title: 'La memoria de mi padre', target: 'el cilindro de datos', obj: 'terminal', intro: [`Mi padre grabó durante años lo que el Imperio hacía aquí. Se lo quitaron al detenerlo.`, `El cilindro está en un terminal. Si lo recupero, al menos su trabajo no habrá sido en vano.`] }),
+  ],
+  mensaje: [
+    (p, g, n) => ({ title: 'Un mensaje que no puede fallar', target: n, intro: [`Necesito que alguien le lleve un mensaje a ${n}. No por comunicador: los escuchan todos.`, `Dile solo esto: «La ruta del este sigue abierta». Él lo entenderá.`], reply: 'La ruta del este… Bien. Dile que esta noche. Y ahora vete.' }),
+  ],
+};
+function dirProcQuest(){
+  const pls = dirPlanets(); if (!pls.length) return;
+  const here = curArea === 'gal' && pls.includes(GS.pid) && Math.random() < 0.5 ? GS.pid : pick(pls);
+  const kind = pick(DIR_KINDS), g = pick(GAL_NAMES) + ', ' + pick(DIR_JOBS), n = pick(GAL_NAMES.filter(x => !g.startsWith(x)));
+  const T = pick(DIR_Q[kind])(here, g, n);
+  const dil = Math.random() < 0.45 ? pick([
+    { prompt: 'Al terminar, uno de los imperiales se rinde y te suplica.', opts: [{ t: 'Dejarle ir: que cuente que aquí hay alguien que protege a la gente', al: 5 }, { t: 'Que no vuelva a hacer daño a nadie', al: -8 }] },
+    { prompt: 'Encuentras también un alijo de créditos imperiales.', opts: [{ t: 'Repartirlo entre los vecinos', al: 5 }, { t: 'Quedártelo (+150 cr)', al: -4, cr: 150 }] },
+  ]) : null;
+  dirAddQuest(Object.assign({ pl: here, kind, giver: g, dilemma: dil }, T));
+}
+function dirProcTick(){
+  const R = repInit(), out = [];
+  const roll = Math.random();
+  // 1) reacción a lo que ha hecho el jugador
+  if (roll < 0.35){
+    const where = SAGA.where && GALAXY[SAGA.where] && !GALAXY[SAGA.where].space ? SAGA.where : 'tatooine';
+    const opts = [];
+    if (bountyLevel() >= 2) opts.push({ tipo: 'noticia', fuente: 'imp', texto: `La Oficina de Seguridad Imperial eleva la recompensa por un Jedi fugitivo visto cerca de ${galName(where)}: ${bountyLevel()*2500} créditos.` });
+    if (bountyLevel() >= 1) opts.push({ tipo: 'reaccion', quien: 'Transmisión anónima', texto: 'Te están buscando. Han repartido tu cara por todos los puertos. Ten cuidado con quién bebes.' });
+    if (SAGA.align >= 35) opts.push({ tipo: 'rumor', texto: `En ${galName(where)} cuentan que un Jedi ayudó a la gente sin pedir nada a cambio. La gente vuelve a hablar de esperanza.` });
+    if (SAGA.align <= -35) opts.push({ tipo: 'rumor', texto: `Dicen que un Jedi con la mirada fría deja cadáveres a su paso. Hasta los imperiales tienen miedo.` });
+    if (R.resistencia >= 20) opts.push({ tipo: 'reaccion', quien: 'Mensaje de la resistencia', texto: 'Lo que hiciste corrió de boca en boca. Hay células nuevas en tres mundos. Gracias.' });
+    if (R.hutts >= 20) opts.push({ tipo: 'reaccion', quien: 'Mayordomo de los hutt', texto: 'El Gran Drubba te tiene aprecio. Eso, en el Borde, vale más que un ejército.' });
+    if (R.hutts <= -20) opts.push({ tipo: 'noticia', fuente: 'hutt', texto: 'Los clanes hutt ponen precio a la cabeza de un «entrometido con espada de luz».' });
+    if (opts.length) out.push(pick(opts));
+  }
+  // 2) la guerra se mueve (más probable donde has ayudado)
+  if (Math.random() < 0.5){
+    const c = dirWarPlanets(); const pid = pick(c.filter(k => (SAGA.cdone || {})[k]).concat(c)); if (pid){
+      const res = Math.random() < clamp(0.35 + Math.max(0, R.resistencia)*0.003 + ((SAGA.cdone || {})[pid] || 0)*0.05, 0.15, 0.7);
+      out.push({ tipo: 'batalla', planeta: pid, ganador: res ? 'resistencia' : 'imperio', cambio: 2 + Math.floor(Math.random()*6),
+        texto: res ? pick([`Una célula rebelde asalta el puerto de ${galName(pid)} y se lleva un cargamento de armas.`, `Los vecinos de ${galName(pid)} expulsan a una patrulla imperial de su barrio.`, `Motín en la guarnición de ${galName(pid)}: varios soldados desertan.`])
+          : pick([`Redadas nocturnas en ${galName(pid)}: decenas de detenidos «por colaborar con terroristas».`, `Llega a ${galName(pid)} un nuevo gobernador con órdenes de mano dura.`, `El Imperio instala un toque de queda indefinido en ${galName(pid)}.`]) });
+    }
+  }
+  // 3) un encargo nuevo
+  if (Math.random() < 0.45 && dirOpenCount() < 3) dirProcQuest();
+  // 4) agentes y rumores
+  if (Math.random() < 0.25){ const A = agentsInit(), k = pick(['rhen', 'mara']), a = A[k], pid = pick(dirPlanets()); if (a && a.alive && pid) out.push({ tipo: 'agente', agente: k, planeta: pid, texto: k === 'rhen' ? `Visto un carguero con la matrícula de un conocido contrabandista cerca de ${galName(pid)}.` : `Aparecen pintadas de la resistencia en ${galName(pid)}. Alguien las firma con una «M».` }); }
+  if (Math.random() < 0.3) out.push({ tipo: 'rumor', texto: pick([`Dicen que en ${galName(pick(dirPlanets()))} pagan bien por pilotos que no hagan preguntas.`, 'Un droide de protocolo viejo va contando que sirvió a un Jedi. Nadie le cree.', 'He oído que el Imperio está comprando todos los cristales que encuentra. ¿Para qué querrán tantos?', `Los peregrinos dicen que la Fuerza «se siente rara» en ${galName(pick(dirPlanets()))} últimamente.`]) });
+  out.forEach(dirApply);
+}
+/* ---------- Con IA ---------- */
+function dirState(){
+  const R = repInit(), A = agentsInit(), C = SAGA_CH[SAGA.ch] || {};
+  const ctl = GAL_IDS.filter(k => !GALAXY[k].space && k !== 'veyra' && !(GALAXY[k].hidden && !SAGA.flags['found_' + k])).map(k => `${k} (${galName(k)}): ${galCtl(k)}%`).join(', ');
+  const ag = ['rhen', 'mara', 'kess', 'varr', 'sayne'].map(k => A[k] && `${k} = ${A[k].name} [${A[k].fac}] en ${A[k].at}${A[k].alive ? '' : ' (muerto)'}: ${A[k].goal}`).filter(Boolean).join('\n');
+  const choices = (SAGA.log || []).slice(-6).map(l => `- ${l.t}${l.al ? (l.al > 0 ? ' (luz)' : ' (oscuridad)') : ''}`).join('\n') || '- ninguna aún';
+  const news = (SAGA.news || []).slice(0, 5).map(n => '- ' + n.t).join('\n') || '- nada';
+  const quests = Object.values(SAGA.dirQuests || {}).map(q => `- ${q.title} (${q.pl})`).join('\n') || '- ninguno';
+  return `Día ${gDay()} de la campaña. El jugador, ${LOOK.name || 'un Jedi'}, está en ${galName(SAGA.where || 'veyra')} (${SAGA.mode === 'orbit' ? 'en órbita' : 'en tierra'}).
+Alineamiento: ${SAGA.align} (−100 oscuridad … +100 luz). Créditos: ${SAGA.credits}. Nivel de busca y captura: ${bountyLevel()}/3.
+Reputación: Imperio ${R.imperio}, resistencia ${R.resistencia}, hutts ${R.hutts}, contrabandistas ${R.contrabandistas}.
+Capítulo actual de la historia: «${C.title || '—'}».
+Control imperial por mundo: ${ctl}.
+Agentes:
+${ag}
+Últimas decisiones del jugador:
+${choices}
+Últimas noticias:
+${news}
+Encargos del Director aún abiertos:
+${quests}`;
+}
+async function dirAITick(){
+  DIR.busy = true;
+  try {
+    const pls = dirPlanets();
+    const sys = `Eres el MAESTRO DEL UNIVERSO de un juego de rol ambientado en la galaxia de Star Wars durante el Imperio. Esta historia es ORIGINAL: no uses NUNCA personajes de las películas ni de las series (ni Luke, ni Vader, ni Yoda, ni Han, ni Jabba…); solo puedes nombrar lugares, especies, tecnología y facciones del lore. Inventa gente corriente con nombre propio.
+Cada pocas horas de juego decides entre 1 y 3 sucesos creíbles que hagan que la galaxia se sienta viva y REACCIONE a lo que hace el jugador (su alineamiento, su reputación, sus últimas decisiones). No cambies la historia principal ni mates a nadie importante. Varía: no repitas las noticias recientes. Todo en español, frases cortas y con sabor.
+Responde SOLO con JSON válido: {"sucesos":[ ... ]} usando estos tipos:
+{"tipo":"noticia","fuente":"imp|res|hutt|misc","texto":"titular de la HoloRed (1-2 frases)"}
+{"tipo":"batalla","planeta":"id","ganador":"imperio|resistencia","cambio":1-10,"texto":"qué ha pasado"}
+{"tipo":"agente","agente":"rhen|mara|kess|varr","planeta":"id","texto":"noticia o rumor que lo delata"}
+{"tipo":"encargo","planeta":"${pls.join('|')}","titulo":"título corto","quien":"Nombre, oficio","especie":"humano|twilek|rodiano|zabrak|wookiee|bith|duros|aqualish|devaroniano","lugar_quien":"plaza|cantina|market","objetivo":"rescate|sabotaje|eliminar|recuperar|mensaje","lugar":"garrison|ruins|wild|hangar|landmark|cantina|plaza","nombre_objetivo":"a quién rescatar / qué sabotear o recuperar / a quién eliminar o llevar el mensaje","enemigos":2-5,"enemigo":"soldados|beast","intro":["frase 1 de quien pide ayuda","frase 2"],"gracias_rescatado":"(solo rescate)","respuesta":"(solo mensaje) lo que contesta el destinatario","gracias":"lo que dice al volver","dilema":{"pregunta":"...","opciones":[{"t":"opción luminosa","al":5},{"t":"opción oscura","al":-8}]} (opcional),"creditos":20-300}  (máximo uno por turno y solo si hay menos de 4 abiertos)
+{"tipo":"reaccion","quien":"quién te habla por el comunicador","texto":"lo que te dice sobre algo que has hecho (1-2 frases)"}
+{"tipo":"rumor","texto":"un rumor que empieza a circular por las cantinas"}
+Planetas válidos: ${GAL_IDS.filter(k => !GALAXY[k].space && k !== 'veyra').join(', ')}.`;
+    const raw = await callAI([{ role: 'system', content: sys }, { role: 'user', content: dirState() }], 1100);
+    const a = raw.indexOf('{'), b = raw.lastIndexOf('}'); let out = null;
+    if (a >= 0 && b > a){ try { out = JSON.parse(raw.slice(a, b + 1).replace(/,\s*([}\]])/g, '$1')); } catch (e) {} }
+    const evs = out && Array.isArray(out.sucesos) ? out.sucesos.slice(0, 3) : [];
+    if (!evs.length) dirProcTick(); else { let q = 0; for (const ev of evs){ if (ev && ev.tipo === 'encargo' && q++) continue; dirApply(ev); } }
+  } catch (e){ dirProcTick(); }
+  DIR.busy = false;
+}
+function directorTick(force){
+  if (!SAGA.on || G.phase === 'menu' || SAGA.ending) return;
+  dirRegister();
+  if (typeof aiReady === 'function' && aiReady() && AIC.umOn !== false && !force){ if (!DIR.busy) dirAITick(); } else dirProcTick();
+}
+HOURLY.push(h => { if (h % 7 === 4) directorTick(); });
+
+/* ============================================================
+   CINEMÁTICAS DE LA HISTORIA
+   Un «director automático» monta cada escena clave: coloca a los
+   personajes delante de ti (o usa a los que ya están allí), proyecta
+   hologramas para quien habla a distancia, muestra expedientes,
+   holocrones e inscripciones, y corta entre planos (general, plano
+   medio, contraplano por encima del hombro, primer plano) con
+   barras de cine y subtítulos.
+   Espacio / clic: siguiente frase · Intro: saltar la escena.
+   ============================================================ */
+const VAZHAR_LOOK = { skin: '#6f7a5a', hair: '#6f7a5a', robe: '#17121a', inner: '#2c1a30', horns: true, hornCol: 0xd8ccb0, bald: true, marks: '#3a4a2a', cape: '#0e0a10', eyes: '#ffc83a' };
+const IMP_LOOK = { skin: '#e0b898', hair: '#2a2018', robe: '#4c5046', inner: '#3e4238', belt: '#1a1a1a', pants: '#3a3e36' };
+const JEDI_LOOK = { skin: '#d8a888', hair: '#5a3a22', robe: '#6a5038', inner: '#d6c6a2' };
+// [patrón, aspecto, genérico] · genérico = cualquiera con ese cargo (no un personaje concreto)
+const CINE_CAST = [
+  [/ilyra/i, () => CL.ilyra], [/\boru\b/i, () => CL.oru], [/\bsael\b/i, () => CL.sael], [/\bbren\b/i, () => CL.bren], [/kiona/i, () => CL.kiona],
+  [/\bnyx\b/i, () => CL.nyx], [/\bmira\b/i, () => CL.mira], [/\bneme\b/i, () => CL.neme], [/\brhen\b/i, () => CL.rhen], [/\bmara\b/i, () => CL.mara],
+  [/\bkell\b/i, () => CL.kell], [/\bdask\b/i, () => CL.dask], [/exor/i, () => CL.exor], [/vazhar|voz antigua|vaszh/i, () => VAZHAR_LOOK],
+  [/oren vaal|ermitañ/i, () => CL.hermit], [/corran/i, () => JEDI_LOOK],
+  [/wookiee|rrakkor|grrawl/i, () => makeFolkLook('wookiee'), true],
+  [/oficial|capataz|gobernador|agente|comandante|teniente|capitán|soldado/i, () => IMP_LOOK, true],
+];
+function cineLookFor(name, strict){
+  for (const [re, fn, gen] of CINE_CAST) if (re.test(name || '')){ if (strict && gen) return null; const l = fn(); return l ? Object.assign({}, l) : null; }
+  return null;
+}
+function cineKind(name){
+  if (/expediente|informe|registro|archivo imperial|datos/i.test(name)) return 'panel';
+  if (/holocr[oó]n/i.test(name)) return 'holocron';
+  if (/inscripci/i.test(name)) return 'glyph';
+  if (/^voz\b/i.test(name)) return 'voice';
+  if (/visi[oó]n|^eco\b|esp[ií]ritu|fantasma/i.test(name)) return 'ghost';
+  if (/droide/i.test(name)) return 'none';
+  return 'person';
+}
+const CINE = { junk: [], n: 0 };
+const _cA = new THREE.Vector3(), _cB = new THREE.Vector3(), _cC = new THREE.Vector3(), _cD = new THREE.Vector3(), _cE = new THREE.Vector3();
+function cineCan(){
+  return (curArea === 'gal' || curArea === 'planet' || curArea === 'sd') && !G.fly && !G.orbit && !G.riding && !P.dead && !G.cine && !G.lines && !G.choice
+    && G.phase !== 'menu' && G.phase !== 'end' && !G.loadingRoom && typeof avatar !== 'undefined' && !!avatar;
+}
+function cineFloor(x, z){
+  let y = curArea === 'gal' ? galH(x, z) : curArea === 'planet' ? planetGround(x, z) : P.pos.y;
+  if (curArea === 'gal' && galGround(x, z) < -500) return null;
+  if (!isFinite(y) || Math.abs(y - P.pos.y) > 1.1) return null;
+  return y;
+}
+function cineParent(){ return curArea === 'gal' ? galGroup : curArea === 'planet' ? planetGroup : curArea === 'sd' && typeof sdGroup !== 'undefined' ? sdGroup : scene; }
+/* ---------- Actores ---------- */
+let _holoTex = null;
+function holoScanTex(){
+  if (_holoTex) return _holoTex;
+  const cv = document.createElement('canvas'); cv.width = 4; cv.height = 32; const c = cv.getContext('2d');
+  for (let y = 0; y < 32; y++){ const v = y % 4 < 2 ? 255 : 150; c.fillStyle = `rgb(${v},${v},${v})`; c.fillRect(0, y, 4, 1); }
+  _holoTex = new THREE.CanvasTexture(cv); _holoTex.wrapS = _holoTex.wrapT = THREE.RepeatWrapping; _holoTex.repeat.set(1, 3); _holoTex.magFilter = THREE.NearestFilter; return _holoTex;
+}
+function cineHoloMat(col = 0x6cc4ff, op = 0.5, add = false){ return new THREE.MeshBasicMaterial({ color: col, map: add ? null : holoScanTex(), transparent: true, opacity: op, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending, depthWrite: !add, side: add ? THREE.DoubleSide : THREE.FrontSide }); }
+function cineHoloize(g, m){ g.traverse(o => { if (o.isMesh || o.isLine){ o.material = m; o.castShadow = false; o.receiveShadow = false; } }); return m; }
+function cineFigure(look){
+  const g = createFolkModel(look); const u = g.userData;
+  if (look.scale) g.scale.setScalar(look.scale); if (look.sy) g.scale.set(look.sx || 1, look.sy, look.sx || 1);
+  try { if (typeof alienDecor === 'function') alienDecor({ g, u }, look); } catch (e) {}
+  return g;
+}
+function cineProjector(root, h){
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, 0.08, 20), std({ color: 0x2a2e36, metalness: 0.8, roughness: 0.35 })); base.position.y = 0.04; root.add(base);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.018, 6, 24), new THREE.MeshBasicMaterial({ color: 0x8fdcff })); ring.rotation.x = Math.PI/2; ring.position.y = 0.085; root.add(ring);
+  const cone = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.12, h, 20, 1, true), cineHoloMat(0x5ab8ff, 0.07, true)); cone.position.y = 0.08 + h/2; root.add(cone);
+  return cone;
+}
+function cineTextTex(w = 512, h = 340){ const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.userData.cv = cv; return t; }
+function cineWrap(c, text, x, y, maxW, lh, maxY){ let line = ''; for (const w of String(text).split(' ')){ if (c.measureText(line + w).width > maxW){ c.fillText(line, x, y); line = ''; y += lh; if (y > maxY) return; } line += w + ' '; } c.fillText(line, x, y); }
+function cineDrawPanel(a, text){
+  const c = a.tex.userData.cv.getContext('2d'), W = c.canvas.width, H = c.canvas.height;
+  c.clearRect(0, 0, W, H); c.fillStyle = 'rgba(30,80,140,.55)'; c.fillRect(0, 0, W, H);
+  c.strokeStyle = 'rgba(150,220,255,.9)'; c.lineWidth = 3; c.strokeRect(6, 6, W - 12, H - 12);
+  c.fillStyle = 'rgba(150,220,255,.18)'; for (let y = 10; y < H; y += 6) c.fillRect(8, y, W - 16, 1);
+  c.fillStyle = '#ffd27a'; c.font = 'bold 24px Bahnschrift, Arial'; c.fillText(a.name.toUpperCase(), 22, 40);
+  c.fillStyle = '#9fe0ff'; c.fillRect(22, 52, W - 44, 2);
+  c.fillStyle = '#e8f6ff'; c.font = '20px Bahnschrift, Arial'; cineWrap(c, text || '…', 22, 86, W - 44, 27, H - 20);
+  a.tex.needsUpdate = true;
+}
+function cineDrawGlyph(tex){
+  const c = tex.userData.cv.getContext('2d'), W = c.canvas.width, H = c.canvas.height;
+  c.clearRect(0, 0, W, H); c.strokeStyle = '#c070ff'; c.lineWidth = 5; c.shadowColor = '#b050ff'; c.shadowBlur = 14;
+  for (let row = 0; row < 7; row++) for (let col = 0; col < 5; col++){
+    const x = 40 + col*90, y = 40 + row*62; c.beginPath();
+    for (let k = 0; k < 4; k++){ const px = x + Math.random()*54, py = y + Math.random()*40; if (k) c.lineTo(px, py); else c.moveTo(px, py); }
+    c.stroke();
+  }
+  tex.needsUpdate = true;
+}
+/* Un actor por cada personaje que habla */
+function cineMakeActor(name, style, opts, lines){
+  const kind = cineKind(name), a = { name, kind, style, seed: Math.random()*9, yaw: 0, pos: new THREE.Vector3(), temp: false };
+  if (kind === 'none' || kind === 'voice') return a;
+  const said = lines.filter(l => l.who === name).map(l => l.text).join(' ');
+  if (kind === 'person'){
+    const ent = cineFindEnt(name, opts);
+    if (ent){ a.ent = ent; a.u = ent.u; a.g = ent.g; a.pos = ent.pos; a.yaw = ent.yaw || 0; a.wasTalking = ent.talking; ent.talking = true; return a; }
+    const live = (opts.live || []).some(n => n === name || name.includes(n)) || style !== 'holo';
+    const holo = /holográfic|holograma|transmisi[oó]n/i.test(said) || !live;
+    const look = cineLookFor(name) || makeFolkLook('humano');
+    a.root = new THREE.Group(); a.g = cineFigure(look); a.u = a.g.userData; a.temp = true;
+    if (holo){ a.holo = true; a.mat = cineHoloize(a.g, cineHoloMat()); a.cone = cineProjector(a.root, 1.9); a.g.position.y = 0.09; a.g.scale.multiplyScalar(0.96); }
+    a.root.add(a.g); a.kneel = /de rodillas/i.test(said);
+    return a;
+  }
+  a.root = new THREE.Group(); a.temp = true;
+  if (kind === 'ghost'){ const look = cineLookFor(name) || JEDI_LOOK; a.g = cineFigure(look); a.u = a.g.userData; a.holo = true; a.ghost = true; a.mat = cineHoloize(a.g, cineHoloMat(0xb8e6ff, 0.5)); a.root.add(a.g); a.kneel = /de rodillas/i.test(said); }
+  if (kind === 'panel'){ a.tex = cineTextTex(); const m = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 0.83), new THREE.MeshBasicMaterial({ map: a.tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })); m.position.y = 1.45; a.prop = m; a.root.add(m); cineProjector(a.root, 1.0); cineDrawPanel(a, ''); a.h = 1.45; }
+  if (kind === 'holocron'){
+    const cube = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), cineHoloMat(0x9fe0ff, 0.6, true)); cube.position.y = 1.05; a.root.add(cube); a.cube = cube;
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(cube.geometry), new THREE.LineBasicMaterial({ color: 0xe0f6ff })); cube.add(edges);
+    const look = cineLookFor(name.replace(/holocr[oó]n( de)?/i, '')) || JEDI_LOOK; a.g = cineFigure(look); a.u = a.g.userData; a.mat = cineHoloize(a.g, cineHoloMat(0x6cc4ff, 0.55)); a.holo = true;
+    a.g.scale.multiplyScalar(0.34); a.g.position.y = 1.18; a.root.add(a.g); a.h = 1.5;
+    const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.12, 0.95, 10), std({ color: 0x3a3430, roughness: 0.7 })); stand.position.y = 0.47; a.root.add(stand);
+  }
+  if (kind === 'glyph'){
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.1, 0.24), std({ color: 0x1c161c, roughness: 0.9 })); slab.position.y = 1.05; a.root.add(slab);
+    a.tex = cineTextTex(512, 480); cineDrawGlyph(a.tex);
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(1.14, 1.8), new THREE.MeshBasicMaterial({ map: a.tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); face.position.set(0, 1.08, 0.125); a.root.add(face); a.prop = face; a.h = 1.5;
+  }
+  return a;
+}
+function cineFindEnt(name, opts){
+  for (const e of opts.ents || []) if (e && e.name === name && e.g) return e;
+  const pool = curArea === 'gal' ? GS.folk : curArea === 'planet' && typeof folk !== 'undefined' ? folk : [];
+  let best = null, bd = 45;
+  for (const f of pool){ if (!f || f.alive === false || !f.g || f.name !== name) continue; const d = Math.hypot(f.pos.x - P.pos.x, f.pos.z - P.pos.z); if (d < bd && Math.abs(f.pos.y - P.pos.y) < 3){ bd = d; best = f; } }
+  return best;
+}
+/* ---------- Escenario: busca un hueco libre delante del jugador ---------- */
+function cineStage(n){
+  const ray = (o, dx, dz, L) => { const t = segHit(o, _cC.set(o.x + dx*L, o.y, o.z + dz*L)); return t < 0 ? L : t*L; };
+  const h0 = P.yaw + Math.PI;
+  // evalúa un punto de anclaje (donde se queda el jugador) y la mejor dirección para el escenario
+  const evalAt = (ax, az) => {
+    const eye = new THREE.Vector3(ax, P.pos.y + 1.4, az); let best = null, bs = -1e9, bf = 0;
+    for (const k of [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6]){
+      const h = h0 + k*Math.PI/6, dx = Math.sin(h), dz = Math.cos(h);
+      const f1 = ray(eye, dx, dz, 6); if (f1 < 3) continue;
+      if (cineFloor(ax + dx*2.5, az + dz*2.5) == null) continue;
+      const C = _cD.set(eye.x + dx*2.5, eye.y, eye.z + dz*2.5);
+      const sc = Math.min(f1, 6) + ray(C, -dz, dx, 4)*0.6 + ray(C, dz, -dx, 4)*0.6 + ray(eye, -dx, -dz, 3)*1.1 + ray(eye, dz, -dx, 3)*0.3 + ray(eye, -dz, dx, 3)*0.3 - Math.abs(k)*0.3;
+      if (sc > bs){ bs = sc; best = h; bf = f1; }
+    }
+    return { best, bs, bf };
+  };
+  let A = { x: P.pos.x, z: P.pos.z, ...evalAt(P.pos.x, P.pos.z) };
+  if (A.best == null || A.bs < 14){   // sitio estrecho: el jugador da un par de pasos a un lugar más abierto
+    const knee = new THREE.Vector3(P.pos.x, P.pos.y + 0.6, P.pos.z);
+    for (let j = 0; j < 8; j++) for (const r of [1.4, 2.6]){
+      const ang = j*Math.PI/4, x = P.pos.x + Math.sin(ang)*r, z = P.pos.z + Math.cos(ang)*r;
+      if (cineFloor(x, z) == null || segHit(knee, _cE.set(x, knee.y, z)) >= 0) continue;
+      if (typeof insideSolid === 'function' && insideSolid(new THREE.Vector3(x, P.pos.y, z))) continue;
+      const E = evalAt(x, z); if (E.best != null && E.bs - r*0.9 > A.bs + 0.5) A = { x, z, ...E, bs: E.bs - r*0.9 };
+    }
+    if (A.x !== P.pos.x || A.z !== P.pos.z){ P.pos.x = A.x; P.pos.z = A.z; const y = cineFloor(A.x, A.z); if (y != null) P.pos.y = y; }
+  }
+  const h = A.best ?? h0, d = A.best != null ? clamp(A.bf - 1.2, 1.9, 2.8) : 1.8, dx = Math.sin(h), dz = Math.cos(h), rx = -dz, rz = dx;
+  const offs = n <= 1 ? [0] : n === 2 ? [-0.8, 0.8] : n === 3 ? [-1.4, 0, 1.4] : Array.from({ length: n }, (_, i) => (i - (n - 1)/2)*1.25);
+  const slots = offs.map(o => { const dd = d - Math.abs(o)*0.22, x = P.pos.x + dx*dd + rx*o, z = P.pos.z + dz*dd + rz*o; const y = cineFloor(x, z); return new THREE.Vector3(x, y == null ? P.pos.y : y, z); });
+  return { h, center: new THREE.Vector3(P.pos.x + dx*d*0.5, P.pos.y, P.pos.z + dz*d*0.5), slots };
+}
+/* ---------- Montaje ---------- */
+function cineSetup(list, opts){
+  const st = { list, i: -1, cast: [], byName: {}, shot: null, n: 0, lastSp: null, fov0: camera.fov };
+  for (const l of list){ if (l.me || st.byName[l.who]) continue; const a = cineMakeActor(l.who, l.style, opts, list); st.byName[l.who] = a; st.cast.push(a); }
+  const placed = st.cast.filter(a => a.kind !== 'none' && a.kind !== 'voice' && (a.temp || Math.hypot(a.pos.x - P.pos.x, a.pos.z - P.pos.z) > 7));
+  const S = cineStage(placed.length || 1); st.stage = S;
+  placed.forEach((a, i) => {
+    const p = S.slots[i]; a.yaw = yawTo(p, P.pos);
+    if (a.temp){ a.pos = p.clone(); a.root.position.copy(p); a.root.rotation.y = a.yaw; if (a.kind !== 'person' && a.kind !== 'ghost' && a.g) a.g.rotation.y = 0; cineParent().add(a.root); CINE.junk.push(a.root); }
+    else { a.ent.pos.copy(p); a.ent.g.position.copy(p); a.ent.yaw = a.yaw; if (a.ent.tgt) a.ent.tgt.copy(p); }
+  });
+  for (const a of st.cast){ if (a.kneel && a.g && a.temp){ a.g.position.y -= 0.42; a.u.legL.rotation.x = -1.45; a.u.legR.rotation.x = -1.45; } if (a.g) a.by = a.g.position.y; }
+  // el jugador mira hacia la escena
+  const vis = st.cast.filter(a => a.g || a.prop);
+  if (vis.length){ const c = vis.reduce((s, a) => s.add(a.pos), new THREE.Vector3()).divideScalar(vis.length); P.yaw = Math.atan2(-(c.x - P.pos.x), -(c.z - P.pos.z)); }
+  P.pitch = 0; P.vel.set(0, 0, 0);
+  const av = P.disguised ? avatarDisg : avatar; if (av){ av.position.set(P.pos.x, P.pos.y, P.pos.z); av.rotation.y = P.yaw + Math.PI; av.updateMatrixWorld(true); }
+  return st;
+}
+function cineHead(a, out){
+  if (a === 'me'){ const av = P.disguised ? avatarDisg : avatar; if (av && av.userData.head){ av.updateMatrixWorld(true); av.userData.head.getWorldPosition(out); out.y += 0.06; return out; } return out.set(P.pos.x, P.pos.y + P.eye*0.95, P.pos.z); }
+  if (a.cube) return out.copy(a.pos).setY(a.pos.y + 1.3);
+  if (a.prop) return a.prop.getWorldPosition(out);
+  if (a.u && a.u.head){ a.g.updateMatrixWorld(true); a.u.head.getWorldPosition(out); out.y += 0.06; return out; }
+  return out.copy(a.pos).setY(a.pos.y + (a.h || 1.55));
+}
+const cineIsBody = a => a && a !== 'me' && (a.kind === 'person' || a.kind === 'ghost');
+function cinePartner(st){
+  if (cineIsBody(st.lastSp)) return st.lastSp;
+  return st.cast.find(cineIsBody) || st.cast.find(a => a.prop || a.cube) || null;
+}
+function cineSafe(look, cam){
+  const t = segHit(look, cam); if (t >= 0) cam.lerpVectors(look, cam, Math.max(0.18, t - 0.06));
+  if (curArea === 'gal'){ const g = galH(cam.x, cam.z); if (isFinite(g) && cam.y < g + 0.35 && g - P.pos.y < 2) cam.y = g + 0.35; }
+  if (typeof roomCeilAt === 'function' && GS.inRoom){ try { const c = roomCeilAt(GS.inRoom, cam.x, cam.z); if (c != null && cam.y > c - 0.25) cam.y = c - 0.25; } catch (e) {} }
+  return cam;
+}
+function cineBodies(st){ const out = [P.pos]; for (const a of st.cast) if (cineIsBody(a) && a.pos) out.push(a.pos); return out; }
+function cineClear(st, c, skip){
+  if (segHit(c.l0, c.from) >= 0 || segHit(c.l1, c.to) >= 0) return false;
+  for (const b of cineBodies(st)){ if (b === skip) continue; for (const cam of [c.from, c.to]) if (Math.hypot(cam.x - b.x, cam.z - b.z) < 0.6 && cam.y < b.y + 2.1) return false; }
+  if (curArea === 'gal') for (const cam of [c.from, c.to]){ const g = galH(cam.x, cam.z); if (isFinite(g) && g > cam.y - 0.25 && g - P.pos.y < 3) return false; }
+  return true;
+}
+function cineShot(type, subj, other, depth = 0){
+  const st = G.cine.st, side0 = (st.n % 2 ? -1 : 1), cands = [];
+  for (const side of [side0, -side0]) for (const k of [1, 0.8]){ const c = cineShotAt(type, subj, other, side, k); if (c) cands.push(c); }
+  if (type === 'wide' || type === 'establish') for (let j = 1; j < 8; j++) for (const k of [1, 0.72]){ const c = cineShotAt(type, subj, other, side0, k, j*Math.PI/4); if (c) cands.push(c); }
+  const skip = type === 'ots' && other ? (other === 'me' ? P.pos : other.pos) : type === 'prop' ? P.pos : null;
+  let pick_ = cands.find(c => cineClear(st, c, skip));
+  if (!pick_ && depth < 3){   // sitio estrecho: prueba un plano más cerrado
+    const body = cineIsBody(subj) ? subj : cinePartner(st), me = subj === 'me';
+    const alt = type === 'wide' || type === 'establish' ? (body && cineIsBody(body) ? ['ots', body, 'me'] : ['push', 'me'])
+      : type === 'two' ? ['cu', subj, other] : type === 'ots' ? (me ? ['push', 'me'] : ['cu', subj, other]) : type === 'cu' ? (me ? ['push', 'me'] : ['ots', subj, 'me']) : null;
+    if (alt) return cineShot(alt[0], alt[1], alt[2], depth + 1);
+  }
+  if (!pick_){   // último recurso: plano subjetivo desde los ojos de quien escucha (nunca atraviesa a nadie)
+    const H = cineHead(subj, new THREE.Vector3()), partner = cinePartner(st);
+    const eye = subj === 'me' ? (cineIsBody(partner) ? cineHead(partner, new THREE.Vector3()) : null) : cineHead('me', new THREE.Vector3());
+    if (eye){ const d = new THREE.Vector3(H.x - eye.x, 0, H.z - eye.z).normalize(); const from = eye.clone().addScaledVector(d, 0.12); pick_ = { type: 'pov', from, to: from.clone().addScaledVector(d, 0.15), l0: H.clone().setY(H.y - 0.15), l1: H.clone().setY(H.y - 0.12), t: 0, dur: 3.5 }; }
+    else { pick_ = cands[0]; cineSafe(pick_.l0, pick_.from); cineSafe(pick_.l1, pick_.to); }
+  }
+  st.n++;
+  return pick_;
+}
+function cineShotAt(type, subj, other, side, k, rot = 0){
+  const st = G.cine.st, H = cineHead(subj, new THREE.Vector3()), O = other ? cineHead(other, new THREE.Vector3()) : null, up = new THREE.Vector3(0, 1, 0);
+  const flat = (a, b) => { const v = new THREE.Vector3(b.x - a.x, 0, b.z - a.z); if (v.lengthSq() < 1e-4) v.set(Math.sin(P.yaw + Math.PI), 0, Math.cos(P.yaw + Math.PI)); return v.normalize(); };
+  let from, to, l0, l1;
+  if (type === 'ots' && O){ // por encima del hombro de «other», mirando a «subj»
+    const d = flat(O, H), r = new THREE.Vector3(-d.z, 0, d.x);
+    from = O.clone().addScaledVector(d, -1.6*k).addScaledVector(r, 0.9*side).addScaledVector(up, 0.3); to = from.clone().addScaledVector(d, 0.3);
+    l0 = H.clone().addScaledVector(up, -0.22); l1 = l0.clone();
+  } else if (type === 'cu'){ // primer plano del que habla
+    const d = O ? flat(H, O) : flat(P.pos, H).negate(), r = new THREE.Vector3(-d.z, 0, d.x);
+    from = H.clone().addScaledVector(d, 2.5*k).addScaledVector(r, 0.55*side).addScaledVector(up, -0.05); to = H.clone().addScaledVector(d, 2.05*k).addScaledVector(r, 0.45*side);
+    l0 = H.clone().addScaledVector(up, -0.3); l1 = H.clone().addScaledVector(up, -0.22);
+  } else if (type === 'two' && O){ // plano medio de los dos
+    const m = H.clone().add(O).multiplyScalar(0.5), d = flat(O, H), r = new THREE.Vector3(-d.z, 0, d.x), w = Math.max(2.6, H.distanceTo(O)*1.6);
+    from = m.clone().addScaledVector(r, w*k*side).addScaledVector(up, 0.25).addScaledVector(d, -0.3); to = from.clone().addScaledVector(r, -0.35*side);
+    l0 = m.clone().addScaledVector(up, -0.2); l1 = l0.clone();
+  } else if (type === 'prop'){ // el jugador ante el objeto
+    const P0 = cineHead('me', new THREE.Vector3()), d = flat(P0, H), r = new THREE.Vector3(-d.z, 0, d.x);
+    from = P0.clone().addScaledVector(d, -1.2*k).addScaledVector(r, 0.75*side).addScaledVector(up, 0.2); to = P0.clone().addScaledVector(d, -0.8*k).addScaledVector(r, 0.6*side).addScaledVector(up, 0.1);
+    l0 = H.clone(); l1 = H.clone();
+  } else if (type === 'push'){ // lento acercamiento a tu cara (voces, recuerdos)
+    const d = flat(P.pos, st.stage.center.distanceTo(P.pos) > 0.3 ? st.stage.center : _cE.set(P.pos.x + Math.sin(P.yaw + Math.PI), 0, P.pos.z + Math.cos(P.yaw + Math.PI))), r = new THREE.Vector3(-d.z, 0, d.x);
+    from = H.clone().addScaledVector(d, 2.8*k).addScaledVector(r, 0.6*side).addScaledVector(up, 0.1); to = H.clone().addScaledVector(d, 1.9*k).addScaledVector(r, 0.35*side);
+    l0 = H.clone().addScaledVector(up, -0.28); l1 = H.clone().addScaledVector(up, -0.18);
+  } else { // general: 'wide' / 'establish'
+    const c = st.stage.center.clone(), d = flat(P.pos, st.stage.center), r = new THREE.Vector3(-d.z, 0, d.x), est = type === 'establish';
+    const a0 = new THREE.Vector3().addScaledVector(r, side).addScaledVector(d, -0.55).normalize().applyAxisAngle(up, rot);
+    from = c.clone().addScaledVector(a0, (est ? 8 : 6.2)*k).addScaledVector(up, est ? 3.8 : 2.3);
+    const a1 = a0.clone().applyAxisAngle(up, 0.22*side);
+    to = c.clone().addScaledVector(a1, (est ? 5.2 : 5.4)*k).addScaledVector(up, 1.9);
+    l0 = c.clone().addScaledVector(up, 1.1); l1 = l0.clone();
+  }
+  return { type, side, k, from, to, l0, l1, t: 0, dur: 3.5 };
+}
+function cineCut(i){
+  const st = G.cine.st, l = st.list[i]; if (!l) return;
+  const narr = /^\(/.test(l.text), sp = l.me ? 'me' : st.byName[l.who], partner = cinePartner(st);
+  let shot;
+  if (i === 0 && st.list.length >= 3 && !l.me) shot = cineShot('establish', 'me');
+  else if (l.me){
+    if (narr) shot = cineShot('wide', 'me');
+    else if (partner) shot = st.n % 3 === 2 ? cineShot('two', 'me', partner) : cineShot(cineIsBody(partner) ? 'ots' : 'push', 'me', partner);
+    else shot = cineShot('push', 'me');
+  } else if (!sp || sp.kind === 'voice' || sp.kind === 'none') shot = cineShot('push', 'me');
+  else if (sp.prop || sp.cube) shot = cineShot('prop', sp);
+  else {
+    const same = st.lastSp === sp;
+    shot = same ? cineShot(st.n % 2 ? 'cu' : 'two', sp, 'me') : cineShot(st.n % 4 === 3 ? 'cu' : 'ots', sp, 'me');
+  }
+  shot.dur = clamp(2.2 + l.text.length*0.045, 3, 9);
+  st.shot = shot; if (sp && sp !== 'me') st.lastSp = sp;
+  if (sp && sp.kind === 'panel') cineDrawPanel(sp, l.text);
+  cineTint(sp && (sp.kind === 'voice' || sp.kind === 'glyph' || /vazhar/i.test(sp.name)) ? 'sith' : sp && (sp.kind === 'ghost') ? 'vision' : '');
+}
+/* ---------- Bucle de la cinemática ---------- */
+function cineUpdate(dt, t){
+  const C = G.cine, st = C.st;
+  if (curArea === 'gal'){ try { for (const f of GS.anim) f(dt); updateGalFolk(dt); } catch (e) {} }
+  const L = G.lines, i = L && L === st.L ? L.i : st.i;
+  if (i !== st.i){ st.i = i; cineCut(i); }
+  if (!st.shot) cineCut(Math.max(0, st.i));
+  const s = st.shot; s.t += dt; const k = eInOut(clamp(s.t/s.dur, 0, 1));
+  camera.position.lerpVectors(s.from, s.to, k);
+  _cA.lerpVectors(s.l0, s.l1, k); _cA.x += Math.sin(t*0.7)*0.012; _cA.y += Math.sin(t*0.9 + 1)*0.01;
+  camera.lookAt(_cA);
+  const cur = L && L === st.L ? L.list[L.i] : null, spName = cur && !cur.me ? cur.who : null, typing = !!(cur && L.chars < cur.text.length);
+  const spk = spName ? st.byName[spName] : null;
+  for (const a of st.cast){
+    if (!a.g && !a.root) continue;
+    const talk = a.name === spName;
+    if (a.g && (a.kind === 'person' || a.kind === 'ghost')){
+      const tgt = talk || !spk || !spk.g || spk === a ? P.pos : spk.pos;
+      a.yaw += angDiff(a.yaw, yawTo(a.pos, tgt)) * (1 - Math.exp(-5*dt));
+      if (a.ent){ a.ent.yaw = a.yaw; a.ent.g.rotation.y = a.yaw; } else a.root.rotation.y = a.yaw;
+    } else if (a.root){ a.root.rotation.y = damp(a.root.rotation.y, yawTo(a.pos, P.pos), 6, dt); }
+    const u = a.u;
+    if (u && u.head){
+      u.head.rotation.x = damp(u.head.rotation.x, talk && typing ? Math.sin(t*8.5 + a.seed)*0.08 : Math.sin(t*0.8 + a.seed)*0.02, 10, dt);
+      u.head.rotation.y = damp(u.head.rotation.y, talk && typing ? Math.sin(t*1.7 + a.seed)*0.12 : 0, 6, dt);
+      if (!a.kneel && !(a.ent && a.ent.binders)){ u.armR.rotation.x = damp(u.armR.rotation.x, talk && typing ? -0.35 - 0.32*Math.max(0, Math.sin(t*2.2 + a.seed)) : 0, 6, dt); u.armR.rotation.z = damp(u.armR.rotation.z, talk && typing ? -0.15 : 0, 6, dt); }
+    }
+    if (a.holo && a.mat){ a.mat.opacity = (a.ghost ? 0.46 : 0.5) + Math.sin(t*31 + a.seed)*0.04 + (Math.random() < 0.025 ? -0.25 : 0); if (a.mat.map) a.mat.map.offset.y = -t*0.35; if (a.g && !a.cube) a.g.position.x = Math.random() < 0.03 ? (Math.random() - 0.5)*0.06 : 0; }
+    if (a.ghost && a.g) a.g.position.y = (a.by || 0) + Math.sin(t*1.3 + a.seed)*0.04;
+    if (a.cone) a.cone.material.opacity = 0.06 + Math.sin(t*23)*0.015;
+    if (a.cube){ a.cube.rotation.y += dt*0.8; a.cube.rotation.x = Math.sin(t*0.6)*0.3; a.cube.position.y = 1.05 + Math.sin(t*1.4)*0.03; }
+  }
+}
+function cineSay(lines0, done, opts = {}){
+  const raw = typeof lines0 === 'function' ? lines0() : lines0;
+  if (!raw || !raw.length){ done && done(); return; }
+  const list = raw.map(l => Object.assign({}, l, { me: l.me || l.who === 'Tú', who: l.who === 'Tú' ? (LOOK.name || 'Tú') : l.who, text: String(l.text).replace(/\{nombre\}/g, LOOK.name || 'Jedi') }));
+  if (!cineCan() || opts.noCine){ sagaSay(list, done); return; }
+  let st; try { cineClearJunk(); st = cineSetup(list, opts); } catch (e){ console.warn('cinemática', e); cineClearJunk(); sagaSay(list, done); return; }
+  G.cine = { t: 0, flags: {}, update: cineUpdate, showAvatar: true, saga: true, st };
+  camera.fov = 52; camera.updateProjectionMatrix();
+  hudGameplay(false); $('cinema').classList.add('on'); $('hud').classList.add('cine'); document.body.classList.add('cineOn'); $('prompt') && $('prompt').classList.remove('on');
+  cineHint(true);
+  sagaSay(list, () => { cineEnd(); done && done(); });
+  st.L = G.lines;
+}
+function cineEnd(){
+  const C = G.cine; if (!C || !C.saga) return;
+  const st = C.st;
+  for (const a of st.cast) if (a.ent) a.ent.talking = a.wasTalking;
+  cineClearJunk();
+  G.cine = null; camera.fov = st.fov0 || 74; camera.updateProjectionMatrix(); camera.rotation.set(P.pitch, P.yaw, 0);
+  $('cinema').classList.remove('on'); $('hud').classList.remove('cine'); document.body.classList.remove('cineOn'); hudGameplay(true); cineHint(false); cineTint('');
+}
+function cineClearJunk(){ for (const r of CINE.junk) if (r.parent) r.parent.remove(r); CINE.junk.length = 0; }
+function cineSkip(){ const L = G.lines; let guard = 300; while (G.lines === L && L && guard-- > 0){ L.chars = 1e9; advanceLines(); } }
+/* Escenas de la historia: pasos «cine» */
+function playCine(s, next){ cineSay(s.lines, next, { live: s.live || [] }); }
+/* ---------- Interfaz ---------- */
+(function(){
+  const css = document.createElement('style'); css.textContent = `
+#hud.cine #dialog{bottom:calc(11vh + 8px);z-index:6;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.5) 35%,rgba(0,0,0,.6));border-top:none;text-align:center;width:min(900px,92vw)}
+#hud.cine #dialog .txt{font-size:21px;text-shadow:0 2px 8px #000,0 0 2px #000}
+#hud.cine #dialog .who{font-size:12px;opacity:.85}
+#hud.cine #dialog .skip{opacity:.5}
+body.cineOn #skillbar,body.cineOn #obj,body.cineOn #marker,body.cineOn #cross,body.cineOn #vitals,body.cineOn #prompt,body.cineOn #mmWrap,body.cineOn #corner,body.cineOn #journal,body.cineOn #disguise,body.cineOn #spotted,body.cineOn #rpg,body.cineOn #news{opacity:0!important;transition:opacity .4s}
+#cineHint{position:fixed;right:22px;top:calc(11vh - 30px);z-index:12;font:12px Bahnschrift,Arial,sans-serif;letter-spacing:2px;color:#cfd8e4;opacity:0;transition:opacity .6s;pointer-events:none;text-shadow:0 1px 3px #000}
+#cineHint.on{opacity:.6}
+#cinePlace{position:fixed;left:24px;top:calc(11vh - 34px);z-index:12;font:14px Bahnschrift,Arial,sans-serif;letter-spacing:4px;color:#e8eef6;opacity:0;transition:opacity 1.2s;pointer-events:none;text-shadow:0 1px 3px #000}
+#cinePlace.on{opacity:.85}
+#cineTint{position:fixed;inset:0;z-index:4;pointer-events:none;opacity:0;transition:opacity 1s}
+#cineTint.sith{opacity:1;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 45%,rgba(70,0,110,.38))}
+#cineTint.vision{opacity:1;background:radial-gradient(ellipse at center,rgba(200,230,255,.06) 30%,rgba(120,170,230,.3));backdrop-filter:saturate(.35)}`;
+  document.head.appendChild(css);
+  for (const id of ['cineHint', 'cinePlace', 'cineTint']){ const d = document.createElement('div'); d.id = id; document.body.appendChild(d); }
+  $('cineHint').innerHTML = 'ESPACIO · SIGUIENTE &nbsp;&nbsp;|&nbsp;&nbsp; INTRO · SALTAR ESCENA';
+})();
+function cineHint(on){
+  $('cineHint').classList.toggle('on', on);
+  const el = $('cinePlace');
+  if (on){ let place = curArea === 'gal' ? galName(GS.pid) + (GS.inRoom ? ' · ' + GS.inRoom.name : '') : curArea === 'planet' ? (G.inTower ? 'Veyra · Torre del Consejo' : 'Veyra') : curArea === 'sd' ? 'A bordo del Vengador' : '';
+    el.textContent = String(place).toUpperCase(); el.classList.add('on'); clearTimeout(cineHint.t); cineHint.t = setTimeout(() => el.classList.remove('on'), 3800); }
+  else el.classList.remove('on');
+}
+function cineTint(k){ $('cineTint').className = k || ''; }
+addEventListener('keydown', e => {
+  if (e.code !== 'Enter' || !G.cine || !G.cine.saga || (e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) return;
+  e.preventDefault(); e.stopImmediatePropagation(); cineSkip();
+}, true);
+// limpieza si la escena se corta (menú, muerte, cambio de zona)
+setInterval(() => { if (!(G.cine && G.cine.saga) && (CINE.junk.length || $('hud').classList.contains('cine'))){ cineClearJunk(); $('hud').classList.remove('cine'); document.body.classList.remove('cineOn'); cineHint(false); cineTint(''); if (!G.cine && !G.fly && G.phase !== 'menu') $('cinema').classList.remove('on'); } }, 1000);
+
+/* ============================================================
    HABILIDADES EN 3.ª PERSONA — el avatar hace lo mismo que se ve
    en 1.ª persona: el sable lanzado sale de su mano y vuelve a ella,
    la carga lo levanta en arco, el salto de Fuerza es una voltereta,
@@ -13012,7 +13597,7 @@ function refreshFolderBtns(){ document.querySelectorAll('.saveDirBtn').forEach(b
 
 
 /* Acceso de depuración (pruebas automáticas) */
-window.__gal = { dressOK, poiOut, get GSr(){ return GS.rooms; }, roomAt, enterRoomNow, exitRoomNow, buildRoomNow, roomInteract, sitDown, playerStand, unstickTick, insideSolid, bandBeat, get UNSTUCK(){ return UNSTUCK; }, SABER_COLORS, SP, saveGame, loadSave, continueFromSave, quickSave, SK, doSkill, useSkill, tpHandPos, tpThrowing, get avatarSaber(){ return avatarSaber; }, get avatar(){ return avatar; }, LOOK, RPG, SIDEQ, offerSide, sideRunStep, sideGivers, galTaskInteract, poiPos, COMPANIONS, recruit, dismissCompanion, sabaccHand, brawlStart, hunterTick, agentsInit, repAdd, bountyLevel, npcHit, talkTo, advanceLines, computeInteract, tryInteract, updateInteract: typeof updateInteract === "function" ? updateInteract : null, renderer, scene, camera, quality, SAGA, GS, OR, TASKS, GALAXY, SAGA_CH, enterSurface, enterOrbit, buildSurface, sagaStartChapter, sagaRunStep, sagaBegin, galJump, startLanding, openGalMap, closeGalMap, choose, pickChoice, galTakeoff, veyraTakeoff, startSagaFresh, boardVengador, setupVengadorFinal, leaveVengador, informantTalk, acceptContract, contractDone, galInteract, galTalk, runTalk, taskText, sagaObjectives, galDominion, alignAdd, P, G, npcs, sith, folk, WORLD, PLACES, keys, sim(sec){ for (let t = 0; t < sec; t += 1/30) if (!G.paused) step(1/30); } };
+window.__gal = { directorTick, dirProcTick, dirApply, dirAddQuest, dirRegister, sideQ, get DIRQ(){ return SAGA.dirQuests; }, cineSay, playCine, cineShotAt, cineClear, cineBodies, segHit, galH, get curArea(){ return curArea; }, cineSkip, cineCan, get CINE_ST(){ return G.cine && G.cine.st; }, get CINE_JUNK(){ return CINE.junk.length; }, sagaRumors, dressOK, poiOut, get GSr(){ return GS.rooms; }, roomAt, enterRoomNow, exitRoomNow, buildRoomNow, roomInteract, sitDown, playerStand, unstickTick, insideSolid, bandBeat, get UNSTUCK(){ return UNSTUCK; }, SABER_COLORS, SP, saveGame, loadSave, continueFromSave, quickSave, SK, doSkill, useSkill, tpHandPos, tpThrowing, get avatarSaber(){ return avatarSaber; }, get avatar(){ return avatar; }, LOOK, RPG, SIDEQ, offerSide, sideRunStep, sideGivers, galTaskInteract, poiPos, COMPANIONS, recruit, dismissCompanion, sabaccHand, brawlStart, hunterTick, agentsInit, repAdd, bountyLevel, npcHit, talkTo, advanceLines, computeInteract, tryInteract, updateInteract: typeof updateInteract === "function" ? updateInteract : null, renderer, scene, camera, quality, SAGA, GS, OR, TASKS, GALAXY, SAGA_CH, enterSurface, enterOrbit, buildSurface, sagaStartChapter, sagaRunStep, sagaBegin, galJump, startLanding, openGalMap, closeGalMap, choose, pickChoice, galTakeoff, veyraTakeoff, startSagaFresh, boardVengador, setupVengadorFinal, leaveVengador, informantTalk, acceptContract, contractDone, galInteract, galTalk, runTalk, taskText, sagaObjectives, galDominion, alignAdd, P, G, npcs, sith, folk, WORLD, PLACES, keys, sim(sec){ for (let t = 0; t < sec; t += 1/30) if (!G.paused) step(1/30); } };
 
 /* ============================================================
    BUCLE PRINCIPAL
