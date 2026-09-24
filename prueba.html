@@ -3944,7 +3944,7 @@ function startGame(ch, retry = false, save = null){
   if (!save && !retry){ for (const k in SAGA) delete SAGA[k]; Object.assign(SAGA, sagaDefaults()); TASKS.story = TASKS.contract = TASKS.side = null; }
   sith.name = null; sith.onDie = null; sith.onYield = null; sith.dmgK = 1; sith.yieldAt = 0; if (SU.acc) setBossLook('vex');
   if (!save && !retry && ch <= 5){ Object.assign(RPG, { lvl: 1, xp: 0, dmg: 1, pushK: 1, title: 'Padawan' }); P.maxHp = 100; resetQuests(); WORLD.crystals.forEach(c => c.taken = false); applyStartSaber(); const sp = specOf(); RPG.dmg = sp.dmg; RPG.pushK = sp.pushK; P.maxHp = 100 + sp.hp; }
-  if (save) applySave(save);
+  if (save){ try { applySave(save); } catch (e) { console.error('applySave', e); } }
   G.stats.start = retry ? G.stats.start : G.time;
   G.retry = retry; G.chapter = ch; G.paused = false; G.endShown = false;
   Object.assign(P, { hp: P.maxHp, force: 100, dead: false, crouch: false, blocking: false, atkT: -1, atkQueued: false, dashT: -1, dashCd: 0, pushT: -1, pushCd: 0, saberOn: true, igniteK: 1, pitch: 0, eye: EYE, vy: 0, air: false, airJumps: 0 });
@@ -3979,7 +3979,7 @@ $('retryBtn').addEventListener('click', () => {
   if (w === 'explore'){ $('end').classList.remove('on'); G.endShown = false; hudGameplay(true); G.control = true; lockPointer(); if (!SAGA.on && QS.flota.state === 'done') sagaBegin('a2_1'); return; }
   if (w) startGame(1); else if (G.checkpoint === 5){ const sv = loadSave(); startGame(5, false, sv); } else if (G.checkpoint === 6){ const sv = loadSave(); if (sv) startGame(6, false, sv); else startGame(6); } else startGame(G.checkpoint || 1, true);
 });
-$('continueBtn').addEventListener('click', () => { const sv = loadSave(); if (sv) continueFromSave(sv); });
+$('continueBtn').addEventListener('click', () => continueSmart());
 function toMenu(){
   try { saveGame(); refreshContinueBtn(); } catch (e) {}
   resetWorlds();
@@ -5502,16 +5502,23 @@ function saveGame(){
   try {
     const data = { ch: G.chapter, rpg: { ...RPG }, maxHp: P.maxHp, quests: QS, crystals: SABER_COLORS.map(c => c.have), taken: WORLD.crystals.map(c => c.taken), color: saberColorI, tod: G.tod, pos: curArea === 'planet' ? [P.pos.x, P.pos.z] : null, stats: G.stats, saga: SAGA, gpos: curArea === 'gal' ? [P.pos.x, P.pos.z] : null, xcr: SABER_COLORS.filter(c => c.extra && c.id !== 'personal' && c.id !== 'amarilloClaro').map(c => ({ id: c.id, name: c.name, hex: c.hex, have: c.have })) };
     if (typeof saveWhere === 'function') try { data.where = saveWhere(); } catch (e) {}
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data)); $('continueBtn') && ($('continueBtn').style.display = '');
+    data.cryIds = Object.fromEntries(SABER_COLORS.map(c => [c.id, !!c.have]));
+    const json = JSON.stringify(data); if (typeof saveToFolder === 'function') saveToFolder(json); localStorage.setItem(SAVE_KEY, json); $('continueBtn') && ($('continueBtn').style.display = '');
   } catch (e) {}
 }
 function loadSave(){ try { const s = localStorage.getItem(SAVE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
 function applySave(s){
   Object.assign(RPG, s.rpg); P.maxHp = s.maxHp || 100; P.hp = P.maxHp;
   for (const k in s.quests) if (QS[k]) Object.assign(QS[k], s.quests[k]);
-  (s.crystals || []).forEach((h, i) => SABER_COLORS[i].have = h);
-  (s.taken || []).forEach((t, i) => WORLD.crystals[i].taken = t);
-  saberColorI = s.color || 0; const have = SABER_COLORS.filter(c => c.have); if (have[saberColorI]) setSaberColor(playerSaber, have[saberColorI].hex);
+  // colores extra (el propio del creador y los cristales encontrados) antes de marcar cuáles tienes
+  for (let i = SABER_COLORS.length - 1; i >= 0; i--) if (SABER_COLORS[i].extra) SABER_COLORS.splice(i, 1);
+  if (LOOK.saber && !SABER_COLORS.find(c => c.id === LOOK.saber)) SABER_COLORS.push({ id: LOOK.saber, name: LOOK.saber === 'personal' ? 'personal' : 'amarillo claro', hex: saberHexOf(LOOK), have: true, extra: true });
+  for (const x of s.xcr || []){ if (!x || !x.id) continue; let e = SABER_COLORS.find(c => c.id === x.id); if (!e){ e = Object.assign({ extra: true }, x); SABER_COLORS.push(e); } e.have = !!x.have; }
+  if (s.cryIds) SABER_COLORS.forEach(c => { if (s.cryIds[c.id] != null) c.have = !!s.cryIds[c.id]; });
+  else (s.crystals || []).forEach((h, i) => { if (SABER_COLORS[i]) SABER_COLORS[i].have = h; });
+  if (!SABER_COLORS.some(c => c.have)) SABER_COLORS[0].have = true;
+  (s.taken || []).forEach((t, i) => { if (WORLD.crystals[i]) WORLD.crystals[i].taken = t; });
+  saberColorI = s.color || 0; const have = SABER_COLORS.filter(c => c.have); if (!have[saberColorI]) saberColorI = 0; if (have[saberColorI]) setSaberColor(playerSaber, have[saberColorI].hex);
   if (s.stats) G.stats = Object.assign(newStats(), s.stats);
   for (const k in SAGA) delete SAGA[k]; Object.assign(SAGA, sagaDefaults(), s.saga ? JSON.parse(JSON.stringify(s.saga)) : {});
   for (const x of s.xcr || []){ let e = SABER_COLORS.find(c => c.id === x.id); if (!e){ e = Object.assign({ extra: true }, x); SABER_COLORS.push(e); } e.have = x.have; }
@@ -10946,12 +10953,13 @@ function continueFromSave(sv){
     else if (sv.gpos && S.where && GALAXY[S.where] && S.where !== 'veyra'){ ch = 6; S.mode = 'gal'; }
     else ch = sv.ch >= 5 ? (S.on ? 6 : 5) : Math.max(1, sv.ch || 1);
   }
-  G.resuming = true;
-  try { startGame(ch, ch === 1, sv); } catch (e) { console.error(e); }
-  try { restoreWhere(sv); } catch (e) { console.error(e); }
+  G.resuming = true; let err = null;
+  try { startGame(ch, ch === 1, sv); restoreWhere(sv); } catch (e) { err = e; console.error(e); }
   G.resuming = false;
-  // si algo falló y seguimos en el menú, no dejar al jugador mirando el fondo
-  if (G.phase === 'menu'){ try { startGame(ch >= 5 ? ch : 1, false, sv); } catch (e) { console.error(e); } }
+  // si algo falló y seguimos en el menú, no dejar al jugador mirando el fondo: se reintenta sin la posición exacta
+  if (G.phase === 'menu' || err){ const sv2 = JSON.parse(JSON.stringify(sv)); delete sv2.where;
+    try { if (G.phase === 'menu') startGame(ch >= 5 ? ch : Math.max(1, ch), false, sv2); } catch (e) { err = e; console.error(e); }
+    if (G.phase === 'menu'){ $('start').classList.add('on'); toast('NO SE PUDO CARGAR', String(err && err.message || err).slice(0, 90), 6); return; } }
   toast('PARTIDA CARGADA', (sv.where && sv.where.label) || '', 2.4);
 }
 /* Tras reconstruir la zona: posición exacta, orientación, objetivos, nave */
@@ -10988,9 +10996,76 @@ addEventListener('keydown', e => {
   else if (e.code === 'F9'){ e.preventDefault(); e.stopPropagation(); const sv = loadSave(); if (!sv){ toast('NO HAY PARTIDA GUARDADA', 'pulsa F5 para guardar', 2); return; } ['pause', 'end'].forEach(id => $(id).classList.remove('on')); G.paused = false; continueFromSave(sv); }
 }, true);
 
+/* ============================================================
+   CARPETA DE PARTIDAS — Documentos/My Games/Star Wars RPG
+   El navegador no deja escribir en una carpeta sin permiso: la
+   primera vez eliges «Documentos» y el juego crea My Games/Star
+   Wars RPG dentro. A partir de ahí cada guardado (F5 y los
+   automáticos) se escribe también en partida.json. En navegadores
+   sin esta función (Firefox, Safari) queda Exportar / Importar.
+   ============================================================ */
+const SAVEDIR = { handle: null, ok: false, pend: null, t: null };
+function sdIdb(){ return new Promise((res, rej) => { const r = indexedDB.open('swrpg_saves', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+async function sdGet(k){ try { const db = await sdIdb(); return await new Promise(res => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(null); }); } catch (e) { return null; } }
+async function sdSet(k, v){ try { const db = await sdIdb(); return await new Promise(res => { const q = db.transaction('kv', 'readwrite').objectStore('kv').put(v, k); q.onsuccess = () => res(true); q.onerror = () => res(false); }); } catch (e) { return false; } }
+async function sdPerm(ask){ const h = SAVEDIR.handle; if (!h || !h.queryPermission) return false; let p = await h.queryPermission({ mode: 'readwrite' }); if (p !== 'granted' && ask) p = await h.requestPermission({ mode: 'readwrite' }); SAVEDIR.ok = p === 'granted'; refreshFolderBtns(); return SAVEDIR.ok; }
+async function chooseSaveFolder(){
+  if (!window.showDirectoryPicker){ toast('TU NAVEGADOR NO LO PERMITE', 'usa Chrome o Edge, o «Exportar partida» para guardar el archivo donde quieras', 5); return; }
+  try {
+    const base = await showDirectoryPicker({ id: 'swrpg-saves', mode: 'readwrite', startIn: 'documents' });
+    let dir = base;
+    if (base.name !== 'Star Wars RPG'){ const mg = base.name === 'My Games' ? base : await base.getDirectoryHandle('My Games', { create: true }); dir = await mg.getDirectoryHandle('Star Wars RPG', { create: true }); }
+    SAVEDIR.handle = dir; SAVEDIR.ok = true; await sdSet('dir', dir); refreshFolderBtns();
+    const js = localStorage.getItem(SAVE_KEY); if (js) await writeFolderFile(js);
+    toast('CARPETA DE PARTIDAS', (base.name === 'Star Wars RPG' ? '' : base.name === 'My Games' ? 'My Games/' : base.name + '/My Games/') + 'Star Wars RPG · partida.json', 4);
+  } catch (e) { if (e && e.name !== 'AbortError') toast('NO SE PUDO USAR LA CARPETA', String(e.message || e).slice(0, 80), 4); }
+}
+async function writeFolderFile(json){
+  if (!SAVEDIR.handle || !SAVEDIR.ok) return false;
+  try { const f = await SAVEDIR.handle.getFileHandle('partida.json', { create: true }), w = await f.createWritable(); await w.write(json); await w.close();
+    SAVEDIR.n = (SAVEDIR.n || 0) + 1; if (SAVEDIR.n % 20 === 1){ const b = await SAVEDIR.handle.getFileHandle('partida_copia.json', { create: true }), wb = await b.createWritable(); await wb.write(json); await wb.close(); }
+    return true; } catch (e) { console.warn('carpeta de partidas', e); SAVEDIR.ok = false; refreshFolderBtns(); return false; }
+}
+function saveToFolder(json){ if (!SAVEDIR.handle || !SAVEDIR.ok) return; SAVEDIR.pend = json; clearTimeout(SAVEDIR.t); SAVEDIR.t = setTimeout(() => { const j = SAVEDIR.pend; SAVEDIR.pend = null; if (j) writeFolderFile(j); }, 800); }
+async function readFolderFile(ask){
+  if (!SAVEDIR.handle) return null; if (!SAVEDIR.ok && !(await sdPerm(ask))) return null;
+  try { const f = await SAVEDIR.handle.getFileHandle('partida.json'); return JSON.parse(await (await f.getFile()).text()); } catch (e) { return null; }
+}
+/* Continuar: la partida más reciente entre la del navegador y la de la carpeta */
+async function continueSmart(){
+  let sv = loadSave();
+  try { const f = await readFolderFile(true); if (f && (!sv || ((f.where && f.where.t) || 0) > ((sv.where && sv.where.t) || 0))){ sv = f; try { localStorage.setItem(SAVE_KEY, JSON.stringify(f)); } catch (e) {} } } catch (e) {}
+  if (sv) continueFromSave(sv); else toast('NO HAY PARTIDA GUARDADA', 'empieza una nueva o importa un archivo', 3);
+}
+function exportSave(){
+  const js = localStorage.getItem(SAVE_KEY); if (!js){ toast('NO HAY PARTIDA', 'guarda primero con F5', 2.5); return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([js], { type: 'application/json' })); a.download = 'StarWarsRPG_partida.json'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  toast('PARTIDA EXPORTADA', 'StarWarsRPG_partida.json (en Descargas)', 3.5);
+}
+function importSave(){
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,application/json';
+  inp.onchange = async () => { const f = inp.files && inp.files[0]; if (!f) return; try { const j = JSON.parse(await f.text()); if (!j || !j.rpg) throw new Error('no es una partida del juego'); localStorage.setItem(SAVE_KEY, JSON.stringify(j)); refreshContinueBtn(); toast('PARTIDA IMPORTADA', (j.where && j.where.label) || 'pulsa Continuar partida', 3.5); } catch (e) { toast('ARCHIVO NO VÁLIDO', String(e.message || e).slice(0, 80), 3.5); } };
+  inp.click();
+}
+function refreshFolderBtns(){ document.querySelectorAll('.saveDirBtn').forEach(b => { b.textContent = SAVEDIR.handle ? (SAVEDIR.ok ? '✓ Partidas en My Games/Star Wars RPG' : 'Carpeta de partidas (dar permiso)') : 'Guardar en Documentos/My Games'; }); }
+(function(){
+  const sr = document.querySelector('#start .row'), pr = document.querySelector('#pause .row');
+  if (sr) sr.insertAdjacentHTML('afterend', '<div class="row"><button class="btn small saveDirBtn">Guardar en Documentos/My Games</button><button class="btn small" id="importBtn">Importar partida</button><button class="btn small" id="exportBtn2">Exportar partida</button></div>');
+  if (pr) pr.insertAdjacentHTML('afterend', '<div class="row"><button class="btn small saveDirBtn">Guardar en Documentos/My Games</button><button class="btn small" id="exportBtn">Exportar partida</button></div>');
+  document.querySelectorAll('.saveDirBtn').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); if (SAVEDIR.handle && !SAVEDIR.ok) sdPerm(true).then(ok => { if (ok){ const js = localStorage.getItem(SAVE_KEY); if (js) writeFolderFile(js); toast('CARPETA DE PARTIDAS', 'guardando en My Games/Star Wars RPG', 3); } }); else chooseSaveFolder(); }));
+  for (const id of ['exportBtn', 'exportBtn2']){ const b = $(id); if (b) b.addEventListener('click', e => { e.stopPropagation(); exportSave(); }); }
+  const ib = $('importBtn'); if (ib) ib.addEventListener('click', e => { e.stopPropagation(); importSave(); });
+  // al abrir el juego: recuperar la carpeta elegida y, si ya hay permiso, traer la partida más reciente
+  sdGet('dir').then(async h => { if (!h) return; SAVEDIR.handle = h; const ok = await sdPerm(false);
+    if (ok){ const f = await readFolderFile(false), sv = loadSave(); if (f && (!sv || ((f.where && f.where.t) || 0) > ((sv.where && sv.where.t) || 0))){ try { localStorage.setItem(SAVE_KEY, JSON.stringify(f)); } catch (e) {} } }
+    else if (!loadSave()){ const b = $('continueBtn'); if (b){ b.style.display = ''; b.innerHTML = 'Continuar partida<small style="display:block;font-size:11px;opacity:.75;margin-top:3px">desde My Games/Star Wars RPG</small>'; } }
+    refreshContinueBtn(); if (!loadSave() && SAVEDIR.handle && $('continueBtn')) $('continueBtn').style.display = ''; });
+  refreshFolderBtns();
+})();
+
 
 /* Acceso de depuración (pruebas automáticas) */
-window.__gal = { SP, saveGame, loadSave, continueFromSave, quickSave, SK, doSkill, useSkill, tpHandPos, tpThrowing, get avatarSaber(){ return avatarSaber; }, get avatar(){ return avatar; }, LOOK, RPG, SIDEQ, offerSide, sideRunStep, sideGivers, galTaskInteract, poiPos, COMPANIONS, recruit, dismissCompanion, sabaccHand, brawlStart, hunterTick, agentsInit, repAdd, bountyLevel, npcHit, talkTo, advanceLines, computeInteract, tryInteract, updateInteract: typeof updateInteract === "function" ? updateInteract : null, renderer, scene, camera, quality, SAGA, GS, OR, TASKS, GALAXY, SAGA_CH, enterSurface, enterOrbit, buildSurface, sagaStartChapter, sagaRunStep, sagaBegin, galJump, startLanding, openGalMap, closeGalMap, choose, pickChoice, galTakeoff, veyraTakeoff, startSagaFresh, boardVengador, setupVengadorFinal, leaveVengador, informantTalk, acceptContract, contractDone, galInteract, galTalk, runTalk, taskText, sagaObjectives, galDominion, alignAdd, P, G, npcs, sith, folk, WORLD, PLACES, keys, sim(sec){ for (let t = 0; t < sec; t += 1/30) if (!G.paused) step(1/30); } };
+window.__gal = { SABER_COLORS, SP, saveGame, loadSave, continueFromSave, quickSave, SK, doSkill, useSkill, tpHandPos, tpThrowing, get avatarSaber(){ return avatarSaber; }, get avatar(){ return avatar; }, LOOK, RPG, SIDEQ, offerSide, sideRunStep, sideGivers, galTaskInteract, poiPos, COMPANIONS, recruit, dismissCompanion, sabaccHand, brawlStart, hunterTick, agentsInit, repAdd, bountyLevel, npcHit, talkTo, advanceLines, computeInteract, tryInteract, updateInteract: typeof updateInteract === "function" ? updateInteract : null, renderer, scene, camera, quality, SAGA, GS, OR, TASKS, GALAXY, SAGA_CH, enterSurface, enterOrbit, buildSurface, sagaStartChapter, sagaRunStep, sagaBegin, galJump, startLanding, openGalMap, closeGalMap, choose, pickChoice, galTakeoff, veyraTakeoff, startSagaFresh, boardVengador, setupVengadorFinal, leaveVengador, informantTalk, acceptContract, contractDone, galInteract, galTalk, runTalk, taskText, sagaObjectives, galDominion, alignAdd, P, G, npcs, sith, folk, WORLD, PLACES, keys, sim(sec){ for (let t = 0; t < sec; t += 1/30) if (!G.paused) step(1/30); } };
 
 /* ============================================================
    BUCLE PRINCIPAL
