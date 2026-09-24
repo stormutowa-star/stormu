@@ -8548,6 +8548,7 @@ function buildSurface(pid){
   GS.pid = pid;
   (BIOMES[P_.biome] || BIOMES.plains)(P_, r);
   buildInteriors(pid);
+  dressPlanet(pid);
   if (GS.particles) ambientParticles(GS.particles);
   GS.reinf = [poiOut('garrison'), poiOut('market')].filter(Boolean).map(p => p.clone());
   // casas: puntos junto a los edificios del asentamiento (para dormir)
@@ -10590,7 +10591,7 @@ function spawnFauna(pid){
   GS.fauna = GS.fauna || [];
   for (const [kind, n, at] of FAUNA[pid] || []){ const c = poiOut(at) || GS.pois.plaza; for (let i = 0; i < n; i++){
     const home = freeSpot(V3(c.x + rand(-18, 18), c.y, c.z + rand(-18, 18)));
-    const g = kind === 'astro' ? makeAstromech(pick([0x3a6ad8, 0xd83a3a, 0x3ab85a, 0xd8a03a, 0x8a3ad8])) : kind === 'probe' ? makeProbeDroid() : kind === 'mouse' ? (() => { const m = new THREE.Group(); const bx = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.22, 0.5), gm(0x2a2a30, { metalness: 0.5 })); bx.position.y = 0.14; m.add(bx); const l = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.02), gglow(0xff5a3a, 2)); l.position.set(0, 0.2, 0.26); m.add(l); return m; })() : makeCreature(kind);
+    const g = kind === 'astro' ? makeAstromech(pick([0x3a6ad8, 0xd83a3a, 0x3ab85a, 0xd8a03a, 0x8a3ad8])) : kind === 'probe' ? makeProbeDroid() : kind === 'mouse' ? (() => { const m = new THREE.Group(); const bx = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.22, 0.5), gm(0x2a2a30, { metalness: 0.5 })); bx.position.y = 0.14; m.add(bx); const l = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.02), gglow(0xff5a3a, 2)); l.position.set(0, 0.2, 0.26); m.add(l); return m; })() : (typeof CREATURES !== 'undefined' && CREATURES[kind] ? CREATURES[kind]() : makeCreature(kind));
     g.position.copy(home); galGroup.add(g);
     GS.fauna.push({ kind, g, pos: home.clone(), home, tgt: home.clone(), t: Math.random()*4, spd: { astro: 1.1, mouse: 3.2, probe: 1.4, bantha: 0.9, nerf: 1, dewback: 0.8, tauntaun: 2, kaadu: 2.2 }[kind] || 1, ph: Math.random()*6 }); } }
 }
@@ -12449,7 +12450,7 @@ BIOMES.swamp = (P_, r) => {
   instTrees(420, rr => { const a = rr()*6.28, d = 250 + rr()*330; return [Math.cos(a)*d, Math.sin(a)*d, 1.3 + rr()*1.2, 10 + rr()*12]; }, 0x3a3226, 0x2a4020, { tr0: 0.7, tr1: 1.3, lw: 3.4, lh: 4.2, leafAt: 0.7, cr: 0.6, leafGeo: new THREE.IcosahedronGeometry(0.6, 0) });
   // sotobosque denso
   const flora = (m = 1.5) => rr => { const a = rr()*6.28, d = 6 + Math.pow(rr(), 0.7)*240, x = Math.cos(a)*d, z = Math.sin(a)*d; if (inClear(x, z, -m) || galH(x, z) < -0.3) return null; return [x, z, 0.7 + rr()*0.9]; };
-  instFlora('fern', 6500, flora(2.5), { seed: 31 }); instFlora('fern', 2500, flora(1), { seed: 38, col: 0xb8d0a0, sy: 1.6 }); instFlora('bush', 1400, flora(3.5), { seed: 32, col: 0x2a4220 }); instFlora('grass', 4200, flora(1.5), { seed: 36, col: 0x4a6a2a });
+  instFlora('fern', 4800, flora(2.5), { seed: 31 }); instFlora('fern', 2500, flora(1), { seed: 38, col: 0xb8d0a0, sy: 1.6 }); instFlora('bush', 1400, flora(3.5), { seed: 32, col: 0x2a4220 }); instFlora('grass', 3000, flora(1.5), { seed: 36, col: 0x4a6a2a });
   instFlora('reed', 900, rr => { const a = rr()*6.28, d = 8 + rr()*240, x = Math.cos(a)*d, z = Math.sin(a)*d, h = galH(x, z); return h > -0.9 && h < -0.05 ? [x, z, 0.8 + rr()*0.6] : null; }, { seed: 33 });
   instFlora('lily', 420, rr => { const a = rr()*6.28, d = 8 + rr()*240, x = Math.cos(a)*d, z = Math.sin(a)*d; return galH(x, z) < -0.55 ? [x, z, 0.6 + rr()*0.8] : null; }, { seed: 34, y: -0.33 });
   instFlora('shroom', 260, flora(1), { seed: 35, col: 0xc8b890 }); instFlora('shroom', 90, flora(1), { seed: 37, glow: true, col: 0x9affd0 });
@@ -12553,6 +12554,240 @@ function gmMissionIcons(c, id, x, y, k){
   c.textBaseline = 'alphabetic';
 }
 function gmLegend(c, W, H_, k){ c.font = `${11*k}px Bahnschrift, Arial`; c.textAlign = 'left'; const L_ = [['#ffc53d', '◆ Historia'], ['#5ad8ff', '◆ Secundaria en curso'], ['#6aff8a', '$ Contrato'], ['#ffd23a', '! Encargos disponibles']]; L_.forEach(([col, t], i) => { c.fillStyle = col; c.fillText(t, 16*k, H_ - (18 + i*16)*k); }); }
+
+/* ============================================================
+   MUNDOS CANÓNICOS · 2 — detalle de cada planeta según el lore
+   Se aplica después de construir el planeta y sus interiores,
+   sin tapar puertas, puntos de misión ni la plataforma.
+   ============================================================ */
+function dressOK(x, z, r = 3){
+  if (galGround(x, z) < -500 || roomAt(x, z)) return false;
+  if (Math.hypot(x - GS.pad.x, z - GS.pad.z) < 15 + r) return false;
+  for (const k in GS.pois){ const p = poiOut(k); if (p && Math.hypot(x - p.x, z - p.z) < 6 + r) return false; }
+  for (const R of GS.rooms || []) if (R.doorOutPos && Math.hypot(x - R.doorOutPos.x, z - R.doorOutPos.z) < 5 + r) return false;
+  for (const b of COLS.gal){ if (!b.on || b.room || b.tag === 'tree' || b.tag === 'rock' || b.tag === 'root') continue; if (x > b.x0 - r && x < b.x1 + r && z > b.z0 - r && z < b.z1 + r) return false; }
+  return true;
+}
+function spotAround(r, cx, cz, R0, R1, rad, tries = 30){ for (let i = 0; i < tries; i++){ const a = r()*6.28, d = R0 + r()*(R1 - R0), x = cx + Math.cos(a)*d, z = cz + Math.sin(a)*d; if (dressOK(x, z, rad)) return [x, z]; } return null; }
+/* ---------- Piezas ---------- */
+function landspeeder(b, x, z, ry, col = 0xb84a2a){ const y = galH(x, z) + 0.6, m = gm(col, { metalness: 0.3, roughness: 0.5 }), dk = gm(0x2a2a2e, { metalness: 0.5 });
+  const fx = Math.sin(ry), fz = Math.cos(ry), rx = Math.cos(ry), rz = -Math.sin(ry);
+  gBox(b, 1.9, 0.55, 4, m, x, y, z, { ry, col: false }); gBox(b, 1.5, 0.35, 1.2, gm(0x9ac8e8, { metalness: 0.2, roughness: 0.2 }), x + fx*0.6, y + 0.55, z + fz*0.6, { ry, col: false });
+  for (const s of [-1, 0, 1]){ const g = new THREE.CylinderGeometry(0.28, 0.32, 1.6, 10); g.rotateX(Math.PI/2); g.rotateY(ry); g.translate(x - fx*1.6 + rx*s*0.75, y + 0.55 + (s ? 0 : 0.35), z - fz*1.6 + rz*s*0.75); b.addGeo(g, dk, true, true); }
+  glowc(x - 1.3, z - 1.3, x + 1.3, z + 1.3, y - 2, y + 0.8, 'veh'); }
+function swoop(b, x, z, ry){ const y = galH(x, z) + 0.7, m = gm(0x3a3a42, { metalness: 0.5 }); gBox(b, 0.6, 0.45, 2.4, m, x, y, z, { ry, col: false }); const g = new THREE.CylinderGeometry(0.3, 0.35, 1.2, 8); g.rotateX(Math.PI/2); g.rotateY(ry); g.translate(x - Math.sin(ry)*0.9, y + 0.2, z - Math.cos(ry)*0.9); b.addGeo(g, gm(0x6a6a70, { metalness: 0.6 }), true, true); }
+function awningStall(b, x, z, ry, cloth, r){ const y = galH(x, z), post = gm(0x6a5a40), fx = Math.sin(ry), fz = Math.cos(ry), rx = Math.cos(ry), rz = -Math.sin(ry);
+  for (const [a, c] of [[-1.4, -1], [1.4, -1], [-1.4, 1], [1.4, 1]]) gBox(b, 0.14, 2.6 + (c > 0 ? 0.3 : 0), 0.14, post, x + rx*a + fx*c, y, z + rz*a + fz*c, { col: false });
+  const g = new THREE.PlaneGeometry(3.2, 2.4); g.rotateX(-Math.PI/2 + 0.12); g.rotateY(ry); g.translate(x, y + 2.75, z); b.addGeo(g, gm(cloth, { side: THREE.DoubleSide, roughness: 1 }), true, true);
+  gBox(b, 2.6, 0.9, 0.7, gm(0x8a6a44), x - fx*0.6, y, z - fz*0.6, { ry, low: true });
+  for (let i = 0; i < 4; i++) gCyl(b, 0.15 + r()*0.1, 0.12, 0.3 + r()*0.2, gm(pick([0x8a5a3a, 0xc8b890, 0x5a7a9a, 0x9a4a3a])), x - fx*0.6 + rx*(i - 1.5)*0.55, y + 0.9, z - fz*0.6 + rz*(i - 1.5)*0.55, 6, { col: false }); }
+function flatAdobe(b, x, z, w, d, h, ry, r){ const y = galH(x, z), wall = gm(pick([0xd6c4a2, 0xcdb896, 0xd8c8a8])), trim = gm(0xb29c78), fx = Math.sin(ry), fz = Math.cos(ry);
+  gBox(b, w, h, d, wall, x, y, z, { ry }); gBox(b, w + 0.3, 0.35, d + 0.3, trim, x, y + h, z, { ry, col: false });
+  gBox(b, 1.4, 2.2, 0.15, gm(0x2a1e14), x + fx*(d/2 + 0.02), y, z + fz*(d/2 + 0.02), { ry, col: false });
+  for (const s of [-1, 1]){ const wx = x + fx*(d/2 + 0.03) + Math.cos(ry)*s*w*0.3, wz = z + fz*(d/2 + 0.03) - Math.sin(ry)*s*w*0.3; const gw = new THREE.CircleGeometry(0.3, 10); gw.rotateY(ry); gw.translate(wx, y + h*0.62, wz); b.addGeo(gw, r() < 0.6 ? gglow(0xffc890, 1.1) : gm(0x1a140e), false, false); }
+  if (r() < 0.5){ gCyl(b, 0.2, 0.24, 2.4, gm(0xa8aab0, { metalness: 0.6 }), x - fx*d*0.2, y + h, z - fz*d*0.2, 8, { col: false }); gCyl(b, 0.45, 0.45, 0.2, gm(0x8a8c92), x - fx*d*0.2, y + h + 1.6, z - fz*d*0.2, 10, { col: false }); } }
+function kraytSkeleton(b, x, z, ry, s = 1){ const bone = gm(0xe8dcc0, { roughness: 0.9 }), y = galH(x, z) - 0.4*s;
+  const fx = Math.sin(ry), fz = Math.cos(ry), rx = Math.cos(ry), rz = -Math.sin(ry);
+  for (let i = 0; i < 26; i++){ const t = i/25, px = x + fx*(t - 0.5)*36*s, pz = z + fz*(t - 0.5)*36*s, py = y + (1.6 + Math.sin(t*Math.PI)*1.2)*s;
+    const v = new THREE.BoxGeometry(0.9*s, 0.9*s, 1.1*s); v.rotateY(ry); v.translate(px, py, pz); b.addGeo(v, bone, true, true);
+    if (i > 3 && i < 20){ const rib = new THREE.TorusGeometry((2.6 - Math.abs(t - 0.45)*3)*s, 0.16*s, 5, 14, Math.PI*0.95); rib.rotateY(ry + Math.PI/2); rib.rotateZ(0); rib.translate(px, py - 0.1*s, pz); b.addGeo(rib, bone, true, true); } }
+  const hx = x + fx*19.5*s, hz = z + fz*19.5*s; gBox(b, 3.2*s, 2*s, 4.5*s, bone, hx, y + 0.4*s, hz, { ry }); for (const sd of [-1, 1]){ gCone(b, 0.45*s, 2.6*s, bone, hx + rx*sd*1.2*s - fx*1.4*s, y + 2.2*s, hz + rz*sd*1.2*s - fz*1.4*s, 6); gBox(b, 0.5*s, 0.5*s, 0.2*s, gm(0x1a140e), hx + rx*sd*0.8*s + fx*1.2*s, y + 1.9*s, hz + rz*sd*0.8*s + fz*1.2*s, { ry, col: false }); }
+  gcol(hx - 2.4*s, hz - 2.4*s, hx + 2.4*s, hz + 2.4*s, y - 1, y + 2.4*s, 'rock'); }
+function sarlaccPit(b, x, z){ const y = galH(x, z); const pit = new THREE.CircleGeometry(9, 32); pit.rotateX(-Math.PI/2); pit.translate(x, y + 0.05, z); b.addGeo(pit, gm(0x6a5238, { roughness: 1 }), false, true);
+  const hole = new THREE.CircleGeometry(3.2, 24); hole.rotateX(-Math.PI/2); hole.translate(x, y + 0.08, z); b.addGeo(hole, gm(0x140c08), false, false);
+  const beak = new THREE.CircleGeometry(1.4, 16); beak.rotateX(-Math.PI/2); beak.translate(x, y + 0.1, z); b.addGeo(beak, gm(0xc86a5a), false, false);
+  for (let i = 0; i < 28; i++){ const a = i/28*Math.PI*2; gCone(b, 0.14, 0.7, gm(0xe8e0c8), x + Math.cos(a)*3.1, y + 0.05, z + Math.sin(a)*3.1, 5); }
+  for (let i = 0; i < 6; i++){ const a = i/6*Math.PI*2 + 0.3; cylBetween(b, V3(x + Math.cos(a)*2.8, y, z + Math.sin(a)*2.8), V3(x + Math.cos(a + 0.4)*4.8, y + 1.6, z + Math.sin(a + 0.4)*4.8), 0.22, 0.08, gm(0x8a5a4a), 5); }
+  for (let a = 0; a < Math.PI*2; a += 0.35) glowc(x + Math.cos(a)*4 - 0.5, z + Math.sin(a)*4 - 0.5, x + Math.cos(a)*4 + 0.5, z + Math.sin(a)*4 + 0.5, y - 1, y + 1.4, 'rock'); }
+function tuskenTent(b, x, z, r){ const y = galH(x, z), cloth = gm(pick([0x9a8a6a, 0x8a7a5a, 0xa89878]), { roughness: 1 }); gCone(b, 2.2, 2.8, cloth, x, y, z, 7, r()*3); gcol(x - 1.4, z - 1.4, x + 1.4, z + 1.4, y - 1, y + 2.4, 'rock');
+  for (let i = 0; i < 3; i++) gCyl(b, 0.05, 0.05, 3.4, gm(0x5a4a34), x + Math.cos(i*2.1)*0.3, y + 1.8, z + Math.sin(i*2.1)*0.3, 4, { col: false }); }
+function mesa(b, x, z, w, h, col, r){ const y = galH(x, z) - 1; for (let k = 0; k < 3; k++){ const s = 1 - k*0.18, hh = h*(0.45 - k*0.08); const g = new THREE.CylinderGeometry(w*0.5*s*(0.85 + r()*0.2), w*0.55*s, hh, 7); g.rotateY(r()*3); g.translate(x + (r() - 0.5)*w*0.1, y + h*(k === 0 ? 0 : k === 1 ? 0.45 : 0.82)*1 + hh/2 - (k ? 0.3 : 0), z + (r() - 0.5)*w*0.1); b.addGeo(g, gm(col, { roughness: 1, flatShading: true }), true, true); }
+  gcol(x - w*0.4, z - w*0.4, x + w*0.4, z + w*0.4, y - 1, y + h, 'rock'); }
+function ropeBridge(b, a, c, mat = gm(0x6a4a2a)){ const n = Math.ceil(a.distanceTo(c)/0.9); for (let i = 0; i <= n; i++){ const t = i/n, x = a.x + (c.x - a.x)*t, z = a.z + (c.z - a.z)*t, y = a.y + (c.y - a.y)*t - Math.sin(t*Math.PI)*0.8; const g = boxGeo(1.4, 0.1, 0.5); g.rotateY(Math.atan2(c.x - a.x, c.z - a.z) + Math.PI/2); g.translate(x, y, z); b.addGeo(g, mat, true, true); }
+  for (const s of [-1, 1]){ const dx = c.x - a.x, dz = c.z - a.z, L_ = Math.hypot(dx, dz), px = -dz/L_*0.7*s, pz = dx/L_*0.7*s; cylBetween(b, V3(a.x + px, a.y + 1, a.z + pz), V3(c.x + px, c.y + 1, c.z + pz), 0.03, 0.03, gm(0x8a7a5a), 3); } }
+function treePlatform(b, cx, cz, y, R, mat = gm(0x7a5234)){ const g = new THREE.CylinderGeometry(R, R, 0.35, 18, 1, false); g.translate(cx, y, cz); b.addGeo(g, mat, true, true); glowc(cx - R*0.8, cz - R*0.8, cx + R*0.8, cz + R*0.8, y - 0.2, y + 0.18, 'plat');
+  for (let i = 0; i < 12; i++){ const a = i/12*Math.PI*2; gBox(b, 0.12, 1, 0.12, gm(0x5a3a22), cx + Math.cos(a)*(R - 0.1), y + 0.18, cz + Math.sin(a)*(R - 0.1), { col: false }); } }
+function ewokHut(b, x, z, y, r){ gCyl(b, 1.6, 1.8, 1.8, gm(0x8a6a44), x, y, z, 10, { col: false }); gCone(b, 2.4, 2.4, gm(pick([0x7a5a3a, 0x9a7a4a])), x, y + 1.8, z, 9); gBox(b, 0.8, 1.2, 0.1, gm(0x2a1a0e), x, y, z + 1.72, { col: false }); }
+function hanging(b, x, y0, z, len, mat){ b.add(0.05, len, 0.05, mat, x, y0 - len/2, z, false, false); }
+
+/* ---------- Detalle por planeta ---------- */
+const DRESS = {
+  tatooine(b, r){
+    // Mos Eisley más densa: casas cúbicas de adobe, torres, muros con arcos
+    for (let i = 0; i < 22; i++){ const s = spotAround(r, 0, 0, 22, 78, 5); if (!s) continue; const [x, z] = s, ry = Math.round(Math.atan2(-x, -z)/(Math.PI/2))*Math.PI/2;
+      if (r() < 0.55) flatAdobe(b, x, z, 5 + r()*4, 4 + r()*3, 3.2 + r()*1.8, ry, r); else { const rr = 3 + r()*2.5; adobe(b, x, z, rr, 3 + r()*1.3, Math.atan2(-x, -z)); } }
+    for (let i = 0; i < 6; i++){ const s = spotAround(r, 0, 0, 30, 70, 3); if (!s) continue; const [x, z] = s, y = galH(x, z); gCyl(b, 1.6, 1.9, 6 + r()*4, gm(0xd0bc98), x, y, z, 12); gCyl(b, 1.9, 1.9, 0.35, gm(0xb29c78), x, y + 6 + 2, z, 12, { col: false }); }
+    // el mercado de chatarra: puestos con toldos de colores
+    const Mk = poiOut('market'); for (let i = 0; i < 7; i++){ const a = i/7*Math.PI*2 + 0.3, x = Mk.x + Math.cos(a)*7.5, z = Mk.z + Math.sin(a)*7.5; if (!dressOK(x, z, 1.5)) continue; awningStall(b, x, z, Math.atan2(Mk.x - x, Mk.z - z), pick([0xb84a2a, 0x3a6a9a, 0xd8a040, 0x6a8a3a, 0x8a3a6a]), r); }
+    // deslizadores, motos y vaporizadores por las calles
+    for (let i = 0; i < 8; i++){ const s = spotAround(r, 0, 0, 12, 60, 2.2); if (s) landspeeder(b, s[0], s[1], r()*6.28, pick([0xb84a2a, 0xc8b890, 0x6a7a8a, 0x8a6a3a])); }
+    for (let i = 0; i < 5; i++){ const s = spotAround(r, 0, 0, 12, 60, 1.5); if (s) swoop(b, s[0], s[1], r()*6.28); }
+    for (let i = 0; i < 10; i++){ const s = spotAround(r, 0, 0, 20, 90, 1); if (!s) continue; const [x, z] = s, y = galH(x, z); gCyl(b, 0.25, 0.3, 4, gm(0xa8aab0, { metalness: 0.6 }), x, y, z, 8, { low: true }); for (const hh of [1.4, 2.6]) gCyl(b, 0.55, 0.55, 0.25, gm(0x8a8c92), x, y + hh, z, 10, { col: false }); }
+    // Mar de Dunas: esqueleto de dragón krayt y el pozo del sarlacc a lo lejos
+    const W_ = poiOut('wild'); kraytSkeleton(b, W_.x + 22, W_.z + 18, 0.8, 1.2);
+    sarlaccPit(b, W_.x - 120, W_.z + 160);
+    // Yermo de Jundland: riscos y el campamento tusken en el cañón
+    const Rn = poiOut('ruins'); for (let i = 0; i < 16; i++){ const a = i/16*Math.PI*2 + r()*0.2, d = 26 + r()*28, x = Rn.x + Math.cos(a)*d, z = Rn.z + Math.sin(a)*d; if (Math.abs(a - Math.PI*0.75) < 0.35) continue; mesa(b, x, z, 10 + r()*12, 14 + r()*20, pick([0xb89468, 0xa8845a, 0xc8a478]), r); }
+    for (let i = 0; i < 5; i++){ const a = i/5*Math.PI*2, x = Rn.x + 12 + Math.cos(a)*6, z = Rn.z - 8 + Math.sin(a)*6; tuskenTent(b, x, z, r); }
+    { const fx = Rn.x + 12, fz = Rn.z - 8, y = galH(fx, fz); for (let i = 0; i < 8; i++){ const a = i/8*6.28; gBox(b, 0.3, 0.25, 0.2, gm(0x5a5048), fx + Math.cos(a)*0.6, y, fz + Math.sin(a)*0.6, { ry: -a, col: false }); } b.add(0.4, 0.5, 0.4, gglow(0xff8a3a, 2.2), fx, y + 0.25, fz, false, false); }
+    GS.tuskenCamp = V3(Rn.x + 12, 0, Rn.z - 8);
+  },
+  naboo(b, r){
+    // Theed: columnatas, estatuas, jardines, fuentes y los canales
+    const pl = GS.pois.plaza, stone = gm(0xe8dcc0), cu = gm(0x6a9a7a, { metalness: 0.4, roughness: 0.4 });
+    for (let i = 0; i < 16; i++){ const a = i/16*Math.PI*2; gCyl(b, 0.5, 0.55, 6, stone, pl.x + Math.cos(a)*27, galH(pl.x, pl.z), pl.z + Math.sin(a)*27, 10); }
+    { const y = galH(pl.x, pl.z); gCyl(b, 3.4, 3.8, 0.8, stone, pl.x, y, pl.z, 20); const w = new THREE.CircleGeometry(3.2, 20); w.rotateX(-Math.PI/2); w.translate(pl.x, y + 0.72, pl.z); b.addGeo(w, gm(0x5a9ac8, { roughness: 0.1, metalness: 0.3 }), false, true); gCyl(b, 0.4, 0.5, 2.4, stone, pl.x, y + 0.8, pl.z, 10); gDome(b, 1.2, cu, pl.x, y + 3.2, pl.z, { sy: 0.5 }); }
+    for (let i = 0; i < 10; i++){ const s = spotAround(r, 0, 0, 35, 90, 3); if (!s) continue; const [x, z] = s, y = galH(x, z); gBox(b, 4 + r()*3, 0.9, 1.2, gm(0x3a6a2a), x, y, z, { ry: r()*3, low: true }); for (let k = 0; k < 5; k++) b.add(0.3, 0.3, 0.3, gm(pick([0xd84a6a, 0xe8d84a, 0xf0f0f0, 0x9a6ad8])), x + (k - 2)*0.7, y + 1.0, z, false, false); }
+    for (let i = 0; i < 6; i++){ const s = spotAround(r, 0, 0, 30, 70, 2); if (!s) continue; pStatueExt(b, s[0], s[1], r()*6, 3.6, stone); }
+    // Santuario gungan junto al lago: cabezas de piedra en el agua
+    const Rn = poiOut('ruins'); for (let i = 0; i < 5; i++){ const a = i/5*Math.PI*2, x = Rn.x + Math.cos(a)*10, z = Rn.z + Math.sin(a)*10, y = galH(x, z); gBox(b, 2.2, 3, 2.2, gm(0x8a8a78), x, y - 0.5, z, { ry: a }); gBox(b, 2.8, 0.8, 1.6, gm(0x7a7a68), x, y + 2.3, z, { ry: a, col: false }); for (const sd of [-1, 1]) gBox(b, 0.6, 1.6, 0.4, gm(0x7a7a68), x + Math.cos(a + Math.PI/2)*sd*1.4, y + 1.6, z + Math.sin(a + Math.PI/2)*sd*1.4, { ry: a, col: false }); }
+    instFlora('grass', 3000, rr => { const a = rr()*6.28, d = 40 + rr()*260; return [Math.cos(a)*d, Math.sin(a)*d, 0.8 + rr()*0.6]; }, { seed: 51, col: 0x5a9a3a });
+  },
+  alderaan(b, r){
+    // Aldera: puentes y jardines blancos, lago y montañas nevadas al fondo
+    const wh = gm(0xf2f2ee, { roughness: 0.5 });
+    const L_ = V3(60, 0, -80), ly = galH(L_.x, L_.z); const lake = new THREE.CircleGeometry(42, 40); lake.rotateX(-Math.PI/2); lake.translate(L_.x, ly + 0.3, L_.z); b.addGeo(lake, gm(0x4a7aa8, { roughness: 0.1, metalness: 0.4 }), false, true);
+    for (let i = 0; i < 8; i++){ const s = spotAround(r, 0, 0, 30, 80, 2); if (!s) continue; const [x, z] = s, y = galH(x, z); for (let k = 0; k < 3; k++) gCyl(b, 0.35, 0.35, 3, wh, x + (k - 1)*1.6, y, z, 8, { col: false }); gBox(b, 4.2, 0.4, 1, wh, x, y + 3, z, { col: false }); }
+    for (let i = 0; i < 12; i++){ const s = spotAround(r, 0, 0, 25, 90, 1.5); if (!s) continue; pPlantExt(b, s[0], s[1], 1.3, r); }
+    spawnFlyers(5, { s: 3.2, col: 0x6a7a9a, col2: 0x8a9ab8, wcol: 0x5a6a8a, wing: 2.6, R: 220, rad: [40, 90], h: [30, 60], spd: 6, bob: 3, flap: 2.4, flapA: 0.35 });
+    instFlora('grass', 2500, rr => { const a = rr()*6.28, d = 40 + rr()*240; return [Math.cos(a)*d, Math.sin(a)*d, 0.8 + rr()*0.6]; }, { seed: 52, col: 0x4a7a44 });
+  },
+  kashyyyk(b, r){
+    // Kachirho: la ciudad wookiee construida en los árboles wroshyr, con plataformas y puentes
+    const bark = gm(0x5a3a22, { roughness: 1 }), wood = gm(0x7a5234), trees = [];
+    for (let i = 0; i < 80 && trees.length < 7; i++){ const s = spotAround(r, 0, 0, 30, 95, 8, 6); if (!s) continue; const [x, z] = s; if (trees.some(t => Math.hypot(t.x - x, t.z - z) < 26)) continue; const y = galH(x, z), R = 5 + r()*3;
+      gCyl(b, R*0.8, R*1.15, 140, bark, x, y - 1, z, 14); trees.push({ x, z, y, R });
+      for (const [h, pr] of [[10, R + 4], [18, R + 5.5], [27, R + 3.5]]){ treePlatform(b, x, z, y + h, pr, wood); const na = 2 + Math.floor(r()*2); for (let k = 0; k < na; k++){ const ha = r()*6.28, hx = x + Math.cos(ha)*(pr - 1.8), hz = z + Math.sin(ha)*(pr - 1.8); gBox(b, 3, 2.6, 2.6, wood, hx, y + h + 0.18, hz, { ry: -ha, col: false }); const rf = new THREE.CylinderGeometry(1.5, 1.5, 3.2, 10, 1, false, 0, Math.PI); rf.rotateZ(Math.PI/2); rf.rotateY(-ha); rf.translate(hx, y + h + 2.8, hz); b.addGeo(rf, gm(0x4a3420), true, true); } }
+      // rampa en espiral desde el suelo
+      for (let k = 0; k < 42; k++){ const aa = k*0.3, hh = 0.24*(k + 1); gBox(b, 2.4, 0.25, 1.4, wood, x + Math.cos(aa)*(R + 1.4), y + hh - 0.25, z + Math.sin(aa)*(R + 1.4), { ry: -aa, low: true }); } }
+    trees.sort((p, q) => Math.atan2(p.z, p.x) - Math.atan2(q.z, q.x));
+    for (let i = 0; i < trees.length; i++){ const A = trees[i], B = trees[(i + 1) % trees.length]; if (!A || !B || A === B) continue; const dx = B.x - A.x, dz = B.z - A.z, L_ = Math.hypot(dx, dz); if (L_ > 60) continue;
+      ropeBridge(b, V3(A.x + dx/L_*(A.R + 4.5), A.y + 18.2, A.z + dz/L_*(A.R + 4.5)), V3(B.x - dx/L_*(B.R + 4.5), B.y + 18.2, B.z - dz/L_*(B.R + 4.5)), wood); }
+    // la laguna de Kachirho con catamaranes
+    const lg = V3(-120, 0, 60), ly = galH(lg.x, lg.z); const w = new THREE.CircleGeometry(50, 40); w.rotateX(-Math.PI/2); w.translate(lg.x, ly + 0.6, lg.z); b.addGeo(w, gm(0x3a6a6a, { roughness: 0.1, metalness: 0.4 }), false, true);
+    for (let i = 0; i < 3; i++){ const x = lg.x + (i - 1)*10, z = lg.z + 12; gBox(b, 1, 0.6, 8, wood, x - 1.5, ly + 0.6, z, { col: false }); gBox(b, 1, 0.6, 8, wood, x + 1.5, ly + 0.6, z, { col: false }); gBox(b, 4, 0.3, 3, wood, x, ly + 1.2, z, { col: false }); gCyl(b, 0.1, 0.1, 6, wood, x, ly + 1.4, z, 5, { col: false }); }
+    instFlora('fern', 3500, rr => { const a = rr()*6.28, d = 12 + rr()*230, x = Math.cos(a)*d, z = Math.sin(a)*d; return dressOK(x, z, 0) ? [x, z, 1 + rr()*1.2] : null; }, { seed: 53, col: 0x9ac87a });
+    GS.kashTrees = trees;
+  },
+  endor(b, r){
+    // luna boscosa: árboles gigantes, helechos, la aldea ewok en lo alto y el gigante gaseoso en el cielo
+    skyBody({ r: 260, pos: [520, 380, -900], c1: 0x5a8ab8, c2: 0x9ac0d8, bands: 9, seed: 5, tilt: 0.2 });
+    instTrees(260, rr => { const a = rr()*6.28, d = 30 + rr()*420, x = Math.cos(a)*d, z = Math.sin(a)*d; if (!dressOK(x, z, 3)) return null; return [x, z, 2.8 + rr()*1.6, 40 + rr()*25]; }, 0x6a3a22, 0x2a4a22, { tr0: 0.5, tr1: 0.8, lw: 2.2, lh: 4, leafAt: 0.8, cr: 0.5, seed: 61 });
+    const T_ = poiOut('landmark'); const C = poiOut('cantina');
+    const vill = [[C.x + 20, C.z - 14], [C.x - 18, C.z - 20], [C.x + 4, C.z - 34]]; const vy = [];
+    for (const [x, z] of vill){ if (!dressOK(x, z, 3)) continue; const y = galH(x, z); gCyl(b, 2.2, 2.8, 60, gm(0x6a3a22), x, y, z, 12); for (const h of [12, 18]){ treePlatform(b, x, z, y + h, 6.5); for (let k = 0; k < 3; k++){ const a = k*2.1 + h, hx = x + Math.cos(a)*4.2, hz = z + Math.sin(a)*4.2; ewokHut(b, hx, hz, y + h + 0.18, r); } } vy.push(V3(x, y + 18, z)); }
+    for (let i = 0; i + 1 < vy.length; i++) ropeBridge(b, vy[i], vy[i + 1]);
+    instFlora('fern', 4500, rr => { const a = rr()*6.28, d = 8 + rr()*240, x = Math.cos(a)*d, z = Math.sin(a)*d; return [x, z, 1.1 + rr()*1.3]; }, { seed: 62, col: 0xa8d890 });
+    for (let i = 0; i < 3; i++){ const s = spotAround(r, poiOut('garrison').x, poiOut('garrison').z, 8, 18, 1.5); if (s) swoop(b, s[0], s[1], r()*6.28); }
+  },
+  yavin(b, r){
+    // Yavin 4: el gigante gaseoso Yavin domina el cielo; selva densa de árboles massassi
+    skyBody({ r: 420, pos: [-600, 520, -1100], c1: 0xd87a3a, c2: 0xf0c890, bands: 14, seed: 9, spot: 'rgba(160,70,30,.7)', tilt: -0.25 });
+    instTrees(300, rr => { const a = rr()*6.28, d = 30 + rr()*400, x = Math.cos(a)*d, z = Math.sin(a)*d; if (!dressOK(x, z, 3)) return null; return [x, z, 1.5 + rr()*1.2, 22 + rr()*18]; }, 0x7a6a5a, 0x2f7a3a, { tr0: 0.4, tr1: 0.7, lw: 4, lh: 3, leafAt: 0.95, cr: 0.5, seed: 71 });
+    instFlora('fern', 4000, rr => { const a = rr()*6.28, d = 10 + rr()*240, x = Math.cos(a)*d, z = Math.sin(a)*d; return [x, z, 1 + rr()*1.2]; }, { seed: 72, col: 0x9ad880 });
+    for (let i = 0; i < 12; i++){ const s = spotAround(r, 0, 0, 30, 140, 2); if (!s) continue; const [x, z] = s, y = galH(x, z); gBox(b, 2 + r()*2, 1.5 + r()*2, 2 + r()*2, gm(0x7a7a6a), x, y - 0.4, z, { ry: r()*3 }); }
+    spawnFlyers(10, { s: 0.8, col: 0x3a6a8a, col2: 0xc8a040, wing: 1, R: 160, rad: [8, 20], h: [8, 16], spd: 4, bob: 1, flap: 10 });
+  },
+  hoth(b, r){
+    // Hoth: tres lunas, crestas de hielo, ventisqueros y la boca de las cuevas
+    skyBody({ r: 30, pos: [200, 420, -700], c1: 0xd8e0e8, c2: 0xb8c4d0, bands: 3, seed: 2 }); skyBody({ r: 18, pos: [-300, 380, -760], c1: 0xe0e4ea, c2: 0xc0c8d0, bands: 2, seed: 3 }); skyBody({ r: 12, pos: [-120, 520, -820], c1: 0xe8e8f0, c2: 0xc8ccd8, bands: 2, seed: 4 });
+    for (let i = 0; i < 40; i++){ const s = spotAround(r, 0, 0, 60, 300, 3); if (!s) continue; const [x, z] = s, y = galH(x, z), g = new THREE.SphereGeometry(4 + r()*8, 10, 6, 0, Math.PI*2, 0, Math.PI/2); g.scale(2.2, 0.35, 1); g.rotateY(r()*3); g.translate(x, y - 0.3, z); b.addGeo(g, gm(0xf4f8ff, { roughness: 0.9 }), false, true); }
+    const C = poiOut('landmark'); for (let i = 0; i < 8; i++){ const a = Math.PI*1.1 + i*0.12; const x = C.x + Math.cos(a)*20, z = C.z + Math.sin(a)*20; gCone(b, 1.2 + r(), 4 + r()*4, gm(0xcfe8f8, { roughness: 0.2, metalness: 0.1 }), x, galH(x, z) + 12, z, 5, r()); }
+  },
+};
+function pStatueExt(b, x, z, ry, h, mat){ const y = galH(x, z), s = h/3.2; gBox(b, 1.3*s, 0.5*s, 1.3*s, mat, x, y, z); gBox(b, 0.7*s, 1.1*s, 0.4*s, mat, x, y + 0.5*s, z, { ry, col: false }); gBox(b, 0.95*s, 1.0*s, 0.5*s, mat, x, y + 1.6*s, z, { ry, col: false }); gBox(b, 0.55*s, 0.55*s, 0.55*s, mat, x, y + 2.6*s, z, { ry, col: false }); }
+function pPlantExt(b, x, z, s, r){ const y = galH(x, z); gCyl(b, 0.5*s, 0.4*s, 0.6*s, gm(0xe8e8e0), x, y, z, 10); for (let i = 0; i < 6; i++){ const a = i*1.1; gBox(b, 0.14*s, 0.8*s, 0.5*s, gm(pick([0x3a7a3a, 0xd86a8a, 0xe8d86a])), x + Math.cos(a)*0.2*s, y + 0.55*s, z + Math.sin(a)*0.2*s, { ry: a, col: false }); } }
+/* Fauna nueva del lore (usa las piezas de makeCreature) */
+function makeShaak(){ const g = new THREE.Group(), m = gm(0xd8b890, { roughness: 1 }), dk = gm(0x6a4a2a), legs = []; const bd = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), m); bd.scale.set(0.9, 0.8, 1.2); bd.position.y = 1.4; g.add(bd); const hd = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.6), dk); hd.position.set(0, 1.5, 1.2); g.add(hd);
+  for (const [x, z] of [[-0.45, 0.6], [0.45, 0.6], [-0.45, -0.6], [0.45, -0.6]]){ const l = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.8, 0.2), dk); l.geometry.translate(0, -0.4, 0); l.position.set(x, 0.8, z); g.add(l); legs.push(l); } g.userData.legs = legs; g.traverse(q => { if (q.isMesh) q.castShadow = true; }); return g; }
+const CREATURES = { shaak: makeShaak };
+FAUNA.naboo = [['kaadu', 4, 'wild'], ['shaak', 6, 'wild'], ['astro', 2, 'plaza'], ['mouse', 2, 'plaza']];
+FAUNA.alderaan = [['nerf', 7, 'wild'], ['astro', 2, 'plaza']];
+function dressPlanet(pid){
+  const f = DRESS[pid]; if (!f) return;
+  const b = makeBatcher(), r = rng(pid.length*97 + 13);
+  try { f(b, r); } catch (e) { console.error('detalle ' + pid, e); }
+  galGroup.add(b.build());
+}
+
+/* ============================================================
+   MUNDOS CANÓNICOS · 3 — Bespin, Kamino, Mustafar, Geonosis,
+   Lothal, Ilum, Korriban, Jedha y Coruscant
+   ============================================================ */
+function cloudCar(col = 0xd86a2a){ const g = new THREE.Group(), m = gm(col, { metalness: 0.4, roughness: 0.4 }), dk = gm(0x2a2a2e, { metalness: 0.5 });
+  for (const s of [-1, 1]){ const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.8, 3.2, 12), m); pod.rotation.x = Math.PI/2; pod.position.x = s*1.4; g.add(pod); const ck = new THREE.Mesh(new THREE.SphereGeometry(0.6, 10, 8), gm(0x9ac8e8, { metalness: 0.3, roughness: 0.2 })); ck.position.set(s*1.4, 0.2, 1.4); g.add(ck); }
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.3, 0.6), dk); g.add(bar); const en = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 1, 10), dk); en.rotation.x = Math.PI/2; en.position.z = -1.2; g.add(en); return g; }
+function flyLoop(obj, c, rad, h, spd, ph = 0, bob = 1){ galGroup.add(obj); GS.anim.push(dt => { const t = G.time*spd/rad + ph; obj.position.set(c.x + Math.cos(t)*rad, h + Math.sin(t*1.7)*bob, c.z + Math.sin(t)*rad); obj.rotation.y = -t + (spd > 0 ? Math.PI : 0); obj.rotation.z = spd > 0 ? 0.3 : -0.3; }); }
+function beldon(){ const g = new THREE.Group(), m = new THREE.MeshStandardMaterial({ color: 0xe8b8c8, transparent: true, opacity: 0.8, roughness: 0.6 }); const bag = new THREE.Mesh(new THREE.SphereGeometry(14, 16, 10), m); bag.scale.set(1.4, 0.8, 1); g.add(bag);
+  for (let i = 0; i < 10; i++){ const t = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.15, 18, 5), m); const a = i/10*Math.PI*2; t.position.set(Math.cos(a)*10, -16, Math.sin(a)*7); g.add(t); } return g; }
+function volcano(b, x, z, h, rr){ const y = galH(x, z) - 4; gCone(b, rr, h, gm(0x1a1412, { roughness: 1, flatShading: true }), x, y, z, 12); const top = new THREE.CylinderGeometry(rr*0.12, rr*0.14, 1.5, 12); top.translate(x, y + h - 1.2, z); b.addGeo(top, gglow(0xff5a14, 2.2), false, false);
+  const plume = []; for (let i = 0; i < 6; i++){ const m = new THREE.Mesh(new THREE.SphereGeometry(rr*0.12, 8, 6), new THREE.MeshBasicMaterial({ color: 0x3a3230, transparent: true, opacity: 0.5, depthWrite: false })); m.position.set(x, y + h + i*rr*0.15, z); galGroup.add(m); plume.push(m); }
+  GS.anim.push(dt => { plume.forEach((m, i) => { m.position.y += dt*(4 + i); m.scale.setScalar(1 + (m.position.y - (y + h))/(rr*0.4)); m.material.opacity = Math.max(0, 0.5 - (m.position.y - (y + h))/(rr*1.6)); if (m.position.y > y + h + rr*0.8) m.position.y = y + h; }); }); }
+function lavaFall(b, x, y, z, w, h, ry){ const g = new THREE.PlaneGeometry(w, h); g.rotateY(ry); g.translate(x, y + h/2, z); const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff6a1a).multiplyScalar(1.8), side: THREE.DoubleSide })); galGroup.add(m); GS.anim.push(() => { m.material.color.setRGB(1.6 + Math.sin(G.time*3 + x)*0.2, 0.6 + Math.sin(G.time*5 + z)*0.1, 0.1); }); }
+function holoBill(x, y, z, ry, w, h, col){ const t = canvasTex(128, 64, c => { c.fillStyle = 'rgba(0,0,0,0)'; c.clearRect(0, 0, 128, 64); c.strokeStyle = '#fff'; c.lineWidth = 3; c.strokeRect(4, 4, 120, 56); c.font = 'bold 18px Arial'; c.fillStyle = '#fff'; c.textAlign = 'center'; c.fillText(pick(['GLORIA AL IMPERIO', 'ÚNETE A LA ACADEMIA', 'HOLONOTICIAS 24 H', 'BEBE CHISPA', 'SEGURIDAD = PAZ', 'VIAJA A NABOO']), 64, 38); });
+  t.magFilter = THREE.LinearFilter; const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: t, color: col, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })); m.position.set(x, y, z); m.rotation.y = ry; galGroup.add(m); GS.anim.push(() => { m.material.opacity = 0.7 + Math.sin(G.time*6 + x)*0.1 + (Math.random() < 0.01 ? -0.5 : 0); }); }
+function colossus(b, x, z, ry, h, mat){ const y = galH(x, z) - 0.5, s = h/20; gBox(b, 8*s, 3*s, 8*s, mat, x, y, z, { ry }); gBox(b, 4.4*s, 7*s, 3*s, mat, x, y + 3*s, z, { ry, col: false }); gBox(b, 6.2*s, 6*s, 3.4*s, mat, x, y + 10*s, z, { ry, col: false });
+  const hood = new THREE.ConeGeometry(2.6*s, 5*s, 4); hood.rotateY(ry + Math.PI/4); hood.translate(x, y + 18.5*s, z); b.addGeo(hood, mat, true, true); gBox(b, 3*s, 3*s, 3*s, gm(0x1a0a08), x + Math.sin(ry)*0.4*s, y + 16*s, z + Math.cos(ry)*0.4*s, { ry, col: false });
+  for (const sd of [-1, 1]) gBox(b, 1.4*s, 8*s, 1.6*s, mat, x + Math.cos(ry)*sd*3.6*s, y + 8*s, z - Math.sin(ry)*sd*3.6*s, { ry, col: false });
+  const sw = new THREE.BoxGeometry(0.6*s, 12*s, 0.6*s); sw.rotateY(ry); sw.translate(x + Math.sin(ry)*2.2*s, y + 9*s, z + Math.cos(ry)*2.2*s); b.addGeo(sw, mat, true, true); gcol(x - 4*s, z - 4*s, x + 4*s, z + 4*s, y - 1, y + 20*s, 'rock'); }
+Object.assign(DRESS, {
+  bespin(b, r){
+    for (let i = 0; i < 6; i++) flyLoop(cloudCar(pick([0xd86a2a, 0xc85a2a, 0xe89a4a])), V3(rand(-60, 60), 0, rand(-60, 60)), 80 + r()*70, 30 + r()*40, (r() < 0.5 ? -1 : 1)*(18 + r()*10), r()*6);
+    for (let i = 0; i < 4; i++){ const g = beldon(); const a = r()*6.28, d = 500 + r()*400; g.position.set(Math.cos(a)*d, -60 + r()*50, Math.sin(a)*d); galGroup.add(g); const v = V3(Math.sin(a), 0, -Math.cos(a)).multiplyScalar(2); GS.anim.push(dt => { g.position.addScaledVector(v, dt); g.position.y += Math.sin(G.time*0.2 + i)*dt*0.5; }); }
+    for (let i = 0; i < 5; i++){ const a = i/5*Math.PI*2 + 0.3, d = 90 + r()*20; gCyl(b, 2, 0.8, 50, gm(0x7a6a60, { metalness: 0.4 }), Math.cos(a)*d, -70, Math.sin(a)*d, 10, { col: false }); }
+  },
+  kamino(b, r){
+    for (let i = 0; i < 5; i++){ const g = makeFlyer({ s: 5, col: 0x5a6a7a, col2: 0x7a8a9a, wing: 3.4 }); const c = V3(rand(-200, 200), 0, rand(-200, 200)), rad = 90 + r()*80, ph = r()*6, sp = (r() < 0.5 ? -1 : 1)*14;
+      galGroup.add(g); GS.anim.push(dt => { const t = G.time*sp/rad + ph; g.position.set(c.x + Math.cos(t)*rad, -28 + Math.abs(Math.sin(t*0.8))*16, c.z + Math.sin(t)*rad); g.rotation.y = -t + (sp > 0 ? Math.PI : 0); const f = Math.sin(G.time*2.2 + ph)*0.4; g.userData.wings[0].rotation.z = f; g.userData.wings[1].rotation.z = -f; }); }
+    for (let i = 0; i < 8; i++){ const a = r()*6.28, d = 260 + r()*300, x = Math.cos(a)*d, z = Math.sin(a)*d; const g = new THREE.CylinderGeometry(18, 16, 3, 20); g.translate(x, -1, z); b.addGeo(g, gm(0xc8ccd0, { metalness: 0.3 }), false, true); gDome(b, 10, gm(0xd8dce0, { metalness: 0.3 }), x, 0.5, z, { sy: 0.5 }); for (let k = 0; k < 4; k++){ const pa = k/4*6.28; gCyl(b, 1.2, 1.2, 60, gm(0x9aa0a8), x + Math.cos(pa)*12, -61, z + Math.sin(pa)*12, 8, { col: false }); } }
+  },
+  mustafar(b, r){
+    for (let i = 0; i < 6; i++){ const a = i/6*Math.PI*2 + r()*0.4, d = 380 + r()*200; volcano(b, Math.cos(a)*d, Math.sin(a)*d, 90 + r()*80, 60 + r()*30); }
+    const L_ = poiOut('landmark'); for (let i = 0; i < 4; i++){ const x = L_.x - 30 + i*20, z = L_.z - 60; lavaFall(b, x, -3, z, 6, 40 + r()*20, 0); }
+    for (let i = 0; i < 4; i++){ const a = i/4*Math.PI*2 + 0.7, x = Math.cos(a)*55, z = Math.sin(a)*55, y = galH(x, z); gBox(b, 2, 2, 30, gm(0x3a3a42, { metalness: 0.6 }), x + Math.cos(a)*14, y + 6, z + Math.sin(a)*14, { ry: -a + Math.PI/2, col: false }); gCyl(b, 1.2, 1.6, 8, gm(0x2a2a30, { metalness: 0.6 }), x, y, z, 10); }
+    for (let i = 0; i < 26; i++){ const s = spotAround(r, 0, 0, 70, 260, 2); if (!s) continue; const [x, z] = s, y = galH(x, z); gCone(b, 1 + r()*1.6, 6 + r()*14, gm(0x14100e, { roughness: 0.3, metalness: 0.4, flatShading: true }), x, y - 1, z, 5, r()); }
+  },
+  geonosis(b, r){
+    skyBody({ r: 60, pos: [300, 520, -800], c1: 0xc8a888, c2: 0xa88868, bands: 3, seed: 11, ring: 2.6, ringCol: 0xd8b898 }); skyBody({ r: 22, pos: [-380, 420, -700], c1: 0xb89878, c2: 0x987858, bands: 2, seed: 12 });
+    for (let i = 0; i < 18; i++){ const s = spotAround(r, 0, 0, 40, 220, 5); if (!s) continue; const [x, z] = s, y = galH(x, z), hh = 18 + r()*26, rr = 4 + r()*4; gCone(b, rr, hh, gm(0xa85a34, { roughness: 1 }), x, y - 1, z, 9, r()); for (let k = 0; k < 4; k++){ const ha = r()*6.28, hy = y + 2 + r()*hh*0.6; const hole = new THREE.CircleGeometry(0.6 + r()*0.5, 8); hole.rotateY(ha + Math.PI/2); hole.translate(x + Math.cos(ha)*rr*(1 - (hy - y)/hh)*1.02, hy, z - Math.sin(ha)*rr*(1 - (hy - y)/hh)*1.02); b.addGeo(hole, gm(0x1a0c06), false, false); } gcol(x - rr*0.6, z - rr*0.6, x + rr*0.6, z + rr*0.6, y - 1, y + hh*0.6, 'rock'); }
+    for (let i = 0; i < 14; i++){ const s = spotAround(r, 0, 0, 30, 150, 1.5); if (!s) continue; const [x, z] = s, y = galH(x, z), m = gm(0xa89a78, { metalness: 0.3 }); gBox(b, 0.5, 0.35, 1.8, m, x, y, z, { ry: r()*3, col: false }); gBox(b, 0.3, 0.3, 0.5, m, x + 0.5, y + 0.1, z + 0.9, { col: false }); }
+  },
+  lothal(b, r){
+    skyBody({ r: 34, pos: [260, 460, -760], c1: 0xd8d0c0, c2: 0xb8b0a0, bands: 2, seed: 21 }); skyBody({ r: 20, pos: [-200, 520, -820], c1: 0xe0d8c8, c2: 0xc0b8a8, bands: 2, seed: 22 });
+    for (let i = 0; i < 5; i++){ const s = spotAround(r, 0, 0, 120, 320, 10); if (!s) continue; const [x, z] = s, y = galH(x, z), R = 10 + r()*8, a = r()*3; const arch = new THREE.TorusGeometry(R, 2.4 + r(), 6, 18, Math.PI); arch.rotateY(a); arch.translate(x, y - 1, z); b.addGeo(arch, gm(0x8a8070, { roughness: 1, flatShading: true }), true, true); for (const sd of [-1, 1]) gcol(x + Math.cos(a)*sd*R - 2.5, z - Math.sin(a)*sd*R - 2.5, x + Math.cos(a)*sd*R + 2.5, z - Math.sin(a)*sd*R + 2.5, y - 1, y + 8, 'rock'); }
+    instFlora('grass', 5000, rr => { const a = rr()*6.28, d = 30 + rr()*300; return [Math.cos(a)*d, Math.sin(a)*d, 0.9 + rr()*0.8]; }, { seed: 81, col: 0xb8b060 });
+    const G_ = poiOut('garrison'), gy = galH(G_.x, G_.z); gCyl(b, 3, 4, 26, gm(0x7a7e86, { metalness: 0.4 }), G_.x - 16, gy, G_.z - 10, 12); gCyl(b, 6, 5, 3, gm(0x5a5e66, { metalness: 0.5 }), G_.x - 16, gy + 26, G_.z - 10, 12, { col: false });
+    spawnFlyers(6, { s: 0.7, col: 0xc8a878, col2: 0xe8d8b8, wing: 0.8, R: 200, rad: [10, 25], h: [6, 14], spd: 3, bob: 1, flap: 7 });
+  },
+  ilum(b, r){
+    const T_ = poiOut('ruins'), ty = galH(T_.x, T_.z), st = gm(0x9aa8b8, { roughness: 0.8 });
+    gBox(b, 40, 26, 6, gm(0xbfe0f4, { roughness: 0.3 }), T_.x, ty - 1, T_.z - 12); for (const sd of [-1, 1]){ gBox(b, 3, 16, 3, st, T_.x + sd*7, ty, T_.z - 8.5); gBox(b, 4, 3, 4, st, T_.x + sd*7, ty + 16, T_.z - 8.5, { col: false }); }
+    gBox(b, 18, 3, 3, st, T_.x, ty + 16, T_.z - 8.5, { col: false }); gBox(b, 9, 12, 0.5, gm(0x3a4a5a), T_.x, ty, T_.z - 8.8, { col: false });
+    for (let i = 0; i < 3; i++) pGlowExt(b, T_.x - 3 + i*3, ty + 13, T_.z - 8.4, 0x7fd8ff);
+    for (let i = 0; i < 20; i++){ const s = spotAround(r, 0, 0, 40, 250, 2); if (!s) continue; const [x, z] = s, y = galH(x, z); for (let k = 0; k < 3; k++){ const h = 1.5 + r()*3, g = new THREE.ConeGeometry(0.3, h, 5); g.rotateZ((r() - 0.5)*0.8); g.translate(x + (r() - 0.5), y + h*0.4, z + (r() - 0.5)); b.addGeo(g, gglow(pick([0x7fd8ff, 0xa0ffd0, 0xd0e8ff]), 1.3), false, false); } }
+  },
+  korriban(b, r){
+    const st = gm(0x6a4032, { roughness: 1 }), dk = gm(0x3a1a14);
+    colossus(b, -22, -30, 0, 30, st); colossus(b, 22, -30, 0, 30, st);
+    for (let i = 0; i < 10; i++){ const z = -80 - i*34, x = Math.sin(z*0.008)*30 + (i % 2 ? 18 : -18), y = galH(x, z); gBox(b, 1.6, 9 + r()*5, 1.6, dk, x, y, z); for (let k = 0; k < 4; k++) pGlowExt(b, x + 0.82, y + 2 + k*1.8, z, 0xff2a1a, 0.06); }
+    for (let i = 0; i < 12; i++){ const s = spotAround(r, 0, -150, 10, 200, 2); if (!s) continue; const [x, z] = s, y = galH(x, z); const g = new THREE.CylinderGeometry(0.8, 0.9, 2 + r()*4, 8); g.rotateZ(r() < 0.4 ? Math.PI/2 : 0); g.translate(x, y + 1, z); b.addGeo(g, st, true, true); }
+  },
+  jedha(b, r){
+    const st = gm(0x9a9488, { roughness: 1 });
+    const L_ = poiOut('landmark'); for (const [dx, dz, kind] of [[-40, 30, 'arm'], [35, -25, 'torso'], [-20, -50, 'hand'], [60, 40, 'head']]){ const x = L_.x + dx, z = L_.z + dz, y = galH(x, z);
+      if (kind === 'arm'){ const g = new THREE.CylinderGeometry(2.4, 2.8, 24, 10); g.rotateZ(Math.PI/2 - 0.2); g.translate(x, y + 1.5, z); b.addGeo(g, st, true, true); gcol(x - 11, z - 2.5, x + 11, z + 2.5, y - 1, y + 4, 'rock'); }
+      else if (kind === 'torso'){ gBox(b, 14, 10, 8, st, x, y - 3, z, { ry: 0.4 }); gBox(b, 10, 3, 9, gm(0x6a5a48), x, y + 7, z, { ry: 0.4, col: false }); }
+      else if (kind === 'hand'){ gBox(b, 6, 3, 5, st, x, y - 1, z); for (let k = 0; k < 4; k++) gBox(b, 1, 5, 1, st, x - 2 + k*1.3, y + 1, z + 2, { col: false }); }
+      else statueHead(b, x, z); }
+    const pl = GS.pois.plaza; for (let i = 0; i < 6; i++){ const a = i/6*Math.PI*2 + 0.2, x = pl.x + Math.cos(a)*12, z = pl.z + Math.sin(a)*12; if (dressOK(x, z, 1.5)) awningStall(b, x, z, Math.atan2(pl.x - x, pl.z - z), pick([0x8a3a2a, 0x3a5a7a, 0xb88a3a, 0x5a3a6a]), r); }
+  },
+  coruscant(b, r){
+    const sd = new THREE.SphereGeometry(70, 24, 10, 0, Math.PI*2, 0, Math.PI/2); sd.scale(1, 0.35, 1); sd.translate(-520, 60, 380); b.addGeo(sd, gm(0x9a9aa8, { metalness: 0.3 }), false, false);
+    const st = new THREE.CylinderGeometry(22, 30, 80, 20); st.translate(-520, -20, 380); b.addGeo(st, gm(0x7a7a88, { metalness: 0.3 }), false, false);
+    for (let i = 0; i < 14; i++){ const a = r()*6.28, d = 140 + r()*260; holoBill(Math.cos(a)*d, 40 + r()*90, Math.sin(a)*d, -a + Math.PI/2, 30, 14, pick([0xff4a8a, 0x4ad8ff, 0xffd23a, 0x8aff6a])); }
+  },
+});
+function pGlowExt(b, x, y, z, col, s = 0.4){ b.add(s, s*2, s, gglow(col, 1.8), x, y, z, false, false); }
 
 /* ============================================================
    HABILIDADES EN 3.ª PERSONA — el avatar hace lo mismo que se ve
@@ -12777,7 +13012,7 @@ function refreshFolderBtns(){ document.querySelectorAll('.saveDirBtn').forEach(b
 
 
 /* Acceso de depuración (pruebas automáticas) */
-window.__gal = { get GSr(){ return GS.rooms; }, roomAt, enterRoomNow, exitRoomNow, buildRoomNow, roomInteract, sitDown, playerStand, unstickTick, insideSolid, bandBeat, get UNSTUCK(){ return UNSTUCK; }, SABER_COLORS, SP, saveGame, loadSave, continueFromSave, quickSave, SK, doSkill, useSkill, tpHandPos, tpThrowing, get avatarSaber(){ return avatarSaber; }, get avatar(){ return avatar; }, LOOK, RPG, SIDEQ, offerSide, sideRunStep, sideGivers, galTaskInteract, poiPos, COMPANIONS, recruit, dismissCompanion, sabaccHand, brawlStart, hunterTick, agentsInit, repAdd, bountyLevel, npcHit, talkTo, advanceLines, computeInteract, tryInteract, updateInteract: typeof updateInteract === "function" ? updateInteract : null, renderer, scene, camera, quality, SAGA, GS, OR, TASKS, GALAXY, SAGA_CH, enterSurface, enterOrbit, buildSurface, sagaStartChapter, sagaRunStep, sagaBegin, galJump, startLanding, openGalMap, closeGalMap, choose, pickChoice, galTakeoff, veyraTakeoff, startSagaFresh, boardVengador, setupVengadorFinal, leaveVengador, informantTalk, acceptContract, contractDone, galInteract, galTalk, runTalk, taskText, sagaObjectives, galDominion, alignAdd, P, G, npcs, sith, folk, WORLD, PLACES, keys, sim(sec){ for (let t = 0; t < sec; t += 1/30) if (!G.paused) step(1/30); } };
+window.__gal = { dressOK, poiOut, get GSr(){ return GS.rooms; }, roomAt, enterRoomNow, exitRoomNow, buildRoomNow, roomInteract, sitDown, playerStand, unstickTick, insideSolid, bandBeat, get UNSTUCK(){ return UNSTUCK; }, SABER_COLORS, SP, saveGame, loadSave, continueFromSave, quickSave, SK, doSkill, useSkill, tpHandPos, tpThrowing, get avatarSaber(){ return avatarSaber; }, get avatar(){ return avatar; }, LOOK, RPG, SIDEQ, offerSide, sideRunStep, sideGivers, galTaskInteract, poiPos, COMPANIONS, recruit, dismissCompanion, sabaccHand, brawlStart, hunterTick, agentsInit, repAdd, bountyLevel, npcHit, talkTo, advanceLines, computeInteract, tryInteract, updateInteract: typeof updateInteract === "function" ? updateInteract : null, renderer, scene, camera, quality, SAGA, GS, OR, TASKS, GALAXY, SAGA_CH, enterSurface, enterOrbit, buildSurface, sagaStartChapter, sagaRunStep, sagaBegin, galJump, startLanding, openGalMap, closeGalMap, choose, pickChoice, galTakeoff, veyraTakeoff, startSagaFresh, boardVengador, setupVengadorFinal, leaveVengador, informantTalk, acceptContract, contractDone, galInteract, galTalk, runTalk, taskText, sagaObjectives, galDominion, alignAdd, P, G, npcs, sith, folk, WORLD, PLACES, keys, sim(sec){ for (let t = 0; t < sec; t += 1/30) if (!G.paused) step(1/30); } };
 
 /* ============================================================
    BUCLE PRINCIPAL
