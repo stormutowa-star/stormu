@@ -3946,6 +3946,7 @@ function startGame(ch, retry = false, save = null){
   sith.name = null; sith.onDie = null; sith.onYield = null; sith.dmgK = 1; sith.yieldAt = 0; if (SU.acc) setBossLook('vex');
   if (!save && !retry && ch <= 5){ Object.assign(RPG, { lvl: 1, xp: 0, dmg: 1, pushK: 1, title: 'Padawan' }); P.maxHp = 100; resetQuests(); WORLD.crystals.forEach(c => c.taken = false); applyStartSaber(); const sp = specOf(); RPG.dmg = sp.dmg; RPG.pushK = sp.pushK; P.maxHp = 100 + sp.hp; }
   if (save){ try { applySave(save); } catch (e) { console.error('applySave', e); } }
+  G.runId = save ? (save.run || G.runId || 0) : retry ? (G.runId || Date.now()) : Date.now();
   G.stats.start = retry ? G.stats.start : G.time;
   G.retry = retry; G.chapter = ch; G.paused = false; G.endShown = false;
   Object.assign(P, { hp: P.maxHp, force: 100, dead: false, crouch: false, blocking: false, atkT: -1, atkQueued: false, dashT: -1, dashCd: 0, pushT: -1, pushCd: 0, saberOn: true, igniteK: 1, pitch: 0, eye: EYE, vy: 0, air: false, airJumps: 0 });
@@ -5503,7 +5504,7 @@ function saveGame(){
   try {
     const data = { ch: G.chapter, rpg: { ...RPG }, maxHp: P.maxHp, quests: QS, crystals: SABER_COLORS.map(c => c.have), taken: WORLD.crystals.map(c => c.taken), color: saberColorI, tod: G.tod, pos: curArea === 'planet' ? [P.pos.x, P.pos.z] : null, stats: G.stats, saga: SAGA, gpos: curArea === 'gal' ? [P.pos.x, P.pos.z] : null, xcr: SABER_COLORS.filter(c => c.extra && c.id !== 'personal' && c.id !== 'amarilloClaro').map(c => ({ id: c.id, name: c.name, hex: c.hex, have: c.have })) };
     if (typeof saveWhere === 'function') try { data.where = saveWhere(); } catch (e) {}
-    data.cryIds = Object.fromEntries(SABER_COLORS.map(c => [c.id, !!c.have]));
+    data.cryIds = Object.fromEntries(SABER_COLORS.map(c => [c.id, !!c.have])); data.run = G.runId || 0;
     const json = JSON.stringify(data); if (typeof saveToFolder === 'function') saveToFolder(json); localStorage.setItem(SAVE_KEY, json); $('continueBtn') && ($('continueBtn').style.display = '');
   } catch (e) {}
 }
@@ -8629,7 +8630,7 @@ function updateGal(dt, rdt){
   if (P.pos.y < -30){ hurtPlayer(15); P.pos.copy(GS.safe); P.vy = 0; P.air = false; P.vel.set(0, 0, 0); toast('CAÍDA', 'la Fuerza te devuelve a terreno firme', 1.8); }
   if (GS.lavaY != null && P.pos.y < GS.lavaY + 0.6 && !P.air){ hurtPlayer(20); P.pos.copy(GS.safe); P.knock.set(0, 0, 0); flashHurt(0.4, 'rgba(255,90,20,.7)'); }
   if (GS.waterY != null && galH(P.pos.x, P.pos.z) < -1.4 && !P.air){ P.pos.copy(GS.safe); }
-  const rr = GS.inRoom ? 0 : Math.hypot(P.pos.x, P.pos.z); if (rr > 560){ P.pos.x *= 560/rr; P.pos.z *= 560/rr; }
+  const rr = GS.inRoom || (GS.rooms && GS.rooms.length && roomAt(P.pos.x, P.pos.z)) ? 0 : Math.hypot(P.pos.x, P.pos.z); if (rr > 560){ P.pos.x *= 560/rr; P.pos.z *= 560/rr; }
   // tormenta de Kamino
   if (GS.storm){ GS.flashT -= dt; if (GS.flashT <= 0){ GS.flashT = 4 + Math.random()*9; $('flash').style.transition = 'none'; $('flash').style.opacity = 0.35; requestAnimationFrame(() => { $('flash').style.transition = 'opacity .5s'; $('flash').style.opacity = 0; }); addShake(0.01, 0.4); } }
   // tareas de la saga y contratos, fauna, cazarrecompensas
@@ -13148,7 +13149,7 @@ function cineStage(n){
     return { best, bs, bf };
   };
   let A = { x: P.pos.x, z: P.pos.z, ...evalAt(P.pos.x, P.pos.z) };
-  if (A.best == null || A.bs < 14){   // sitio estrecho: el jugador da un par de pasos a un lugar más abierto
+  if ((A.best == null || A.bs < 14) && performance.now() > (CINE.noMoveUntil || 0)){   // sitio estrecho: el jugador da un par de pasos a un lugar más abierto
     const knee = new THREE.Vector3(P.pos.x, P.pos.y + 0.6, P.pos.z);
     for (let j = 0; j < 8; j++) for (const r of [1.4, 2.6]){
       const ang = j*Math.PI/4, x = P.pos.x + Math.sin(ang)*r, z = P.pos.z + Math.cos(ang)*r;
@@ -13440,11 +13441,33 @@ function tpStealth(root, on){
    guardaste (zona, posición, orientación, objetivos, nave…) sin
    cinemáticas. F5 guarda en cualquier momento; F9 carga.
    ============================================================ */
+/* Última posición con los pies en el suelo: si guardas en mitad de un salto se usa esta */
+const LASTGROUND = { pos: null };
+setInterval(() => { try {
+  if (G.phase === 'menu' || P.dead || P.air || G.fly || G.orbit || G.loadingRoom || G.cine || (curArea !== 'gal' && curArea !== 'planet')) return;
+  if (curArea === 'gal' && footY(P.pos.x, P.pos.y, P.pos.z, 'gal') == null) return;
+  LASTGROUND.area = curArea; LASTGROUND.pid = curArea === 'gal' ? GS.pid : null; LASTGROUND.room = curArea === 'gal' && GS.inRoom ? GS.inRoom.id : null;
+  LASTGROUND.inTower = !!G.inTower; LASTGROUND.pos = [P.pos.x, P.pos.y, P.pos.z];
+} catch (e) {} }, 200);
+/* Suelo real bajo un punto (terreno, suelo del interior o techo de una caja/plataforma), sin pasar de la altura guardada */
+function footY(x, y, z, area){
+  const g = area === 'gal' ? galGround(x, z) : area === 'planet' ? planetGround(x, z) : y;
+  const s = supportY({ x, z }, 0.38, y + 0.3, area);
+  const c = [g, s].filter(v => isFinite(v) && v > -500 && v <= y + 0.35);
+  return c.length ? Math.max(...c) : null;
+}
 function saveWhere(){
+  let px = P.pos.x, py = P.pos.y, pz = P.pos.z, room = curArea === 'gal' && GS.inRoom ? GS.inRoom.id : null, inTower = !!G.inTower;
+  const foot = curArea === 'gal' || curArea === 'planet';
+  if (foot && !P.sit && (P.air || P.dead || footY(px, py, pz, curArea) == null || Math.abs(footY(px, py, pz, curArea) - py) > 0.6)){
+    const L = LASTGROUND;
+    if (L.pos && L.area === curArea && (curArea !== 'gal' || L.pid === GS.pid)){ [px, py, pz] = L.pos; room = L.room; inTower = L.inTower; }
+    else if (curArea === 'gal' && GS.safe){ px = GS.safe.x; py = GS.safe.y; pz = GS.safe.z; const r = GS.rooms && GS.rooms.length ? roomAt(px, pz) : null; room = r ? r.id : null; }
+  }
   const W = { area: curArea, phase: G.phase, ch: G.chapter, t: Date.now(), yaw: +P.yaw.toFixed(3), pitch: +P.pitch.toFixed(3), tp: !!G.tp,
-    pos: [+P.pos.x.toFixed(2), +P.pos.y.toFixed(2), +P.pos.z.toFixed(2)], label: savePlaceName() };
-  if (curArea === 'gal'){ W.pid = GS.pid; if (GS.inRoom) W.room = GS.inRoom.id; }
-  if (curArea === 'planet') W.inTower = !!G.inTower;
+    pos: [+px.toFixed(3), +py.toFixed(3), +pz.toFixed(3)], label: savePlaceName() };
+  if (curArea === 'gal'){ W.pid = GS.pid; if (room) W.room = room; if (GS.safe) W.safe = [+GS.safe.x.toFixed(2), +GS.safe.y.toFixed(2), +GS.safe.z.toFixed(2)]; }
+  if (curArea === 'planet') W.inTower = inTower;
   if (G.orbit){ W.orbit = true; W.orbitPid = OR.pid; }
   if (G.fly || G.orbit) W.sp = { pos: SP.pos.toArray().map(v => +v.toFixed(2)), q: SP.q.toArray().map(v => +v.toFixed(5)), hull: SP.hull, shield: SP.shield, kills: SP.kills || 0, t: SP.t || 0, throttle: SP.throttle };
   if (curArea === 'out' || curArea === 'sd' || curArea === 'space') W.obj = (G.objectives || []).map(o => ({ id: o.id, done: !!o.done, failed: !!o.failed }));
@@ -13463,10 +13486,25 @@ function savePlaceName(){
   return '';
 }
 function timeAgo(t){ const s = Math.max(0, (Date.now() - t)/1000); return s < 60 ? 'hace un momento' : s < 3600 ? 'hace ' + Math.round(s/60) + ' min' : s < 86400 ? 'hace ' + Math.round(s/3600) + ' h' : 'hace ' + Math.round(s/86400) + ' días'; }
+/* Dos ranuras: tu guardado manual (F5) y el autoguardado. «Continuar» carga tu F5. */
+const QUICK_KEY = 'sombraExor_f5_v1';
+function loadQuick(){ try { const s = localStorage.getItem(QUICK_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+const svT = sv => (sv && sv.where && sv.where.t) || 0;
+function continuePick(){
+  const q = loadQuick(), a = loadSave();
+  if (q && a && (q.run || 0) !== (a.run || 0)) return svT(a) > svT(q) ? { sv: a, kind: 'auto', other: q, otherKind: 'quick' } : { sv: q, kind: 'quick', other: a, otherKind: 'auto' };
+  if (q) return { sv: q, kind: 'quick', other: a && svT(a) > svT(q) + 3000 ? a : null, otherKind: 'auto' };
+  return { sv: a, kind: 'auto', other: null };
+}
+const saveSub = (sv, kind) => { const W = (sv && sv.where) || {}; return `<small style="display:block;font-size:11px;opacity:.75;letter-spacing:1px;margin-top:3px">${kind === 'quick' ? 'Guardado F5' : 'Autoguardado'}${W.label ? ' · ' + W.label : ''}${W.t ? ' — ' + timeAgo(W.t) : ''}</small>`; };
 function refreshContinueBtn(){
-  const b = $('continueBtn'); if (!b) return; const sv = loadSave();
-  b.style.display = sv ? '' : 'none';
-  if (sv){ const W = sv.where || {}; b.innerHTML = 'Continuar partida' + (W.label ? `<small style="display:block;font-size:11px;opacity:.75;letter-spacing:1px;margin-top:3px">${W.label}${W.t ? ' — ' + timeAgo(W.t) : ''}</small>` : ''); }
+  const b = $('continueBtn'); if (!b) return; const c = continuePick();
+  b.style.display = c.sv ? '' : 'none';
+  if (c.sv) b.innerHTML = 'Continuar partida' + saveSub(c.sv, c.kind);
+  let alt = $('continueAlt');
+  if (!alt){ b.insertAdjacentHTML('afterend', '<button class="btn small" id="continueAlt" style="display:none"></button>'); alt = $('continueAlt'); alt.addEventListener('click', e => { e.stopPropagation(); continueSmart(alt.dataset.kind); }); }
+  if (c.other){ alt.style.display = ''; alt.dataset.kind = c.otherKind; alt.innerHTML = (c.otherKind === 'auto' ? 'Cargar el autoguardado (más reciente)' : 'Cargar tu guardado F5') + saveSub(c.other, c.otherKind); }
+  else alt.style.display = 'none';
 }
 /* Decide en qué capítulo/zona hay que reconstruir el mundo (también para partidas antiguas) */
 function continueFromSave(sv){
@@ -13485,7 +13523,7 @@ function continueFromSave(sv){
     else if (sv.gpos && S.where && GALAXY[S.where] && S.where !== 'veyra'){ ch = 6; S.mode = 'gal'; }
     else ch = sv.ch >= 5 ? (S.on ? 6 : 5) : Math.max(1, sv.ch || 1);
   }
-  G.resuming = true; let err = null;
+  G.resuming = true; let err = null; if (typeof CINE !== 'undefined') CINE.noMoveUntil = performance.now() + 12000;
   try { startGame(ch, ch === 1, sv); restoreWhere(sv); } catch (e) { err = e; console.error(e); }
   G.resuming = false;
   // si algo falló y seguimos en el menú, no dejar al jugador mirando el fondo: se reintenta sin la posición exacta
@@ -13500,8 +13538,9 @@ function restoreWhere(sv){
   const [x, y, z] = W.pos;
   if (W.tp != null) G.tp = W.tp;
   P.yaw = W.yaw ?? P.yaw; P.pitch = W.pitch ?? 0; P.vel.set(0, 0, 0); P.vy = 0; P.air = false;
-  if (W.area === 'planet'){ G.inTower = !!W.inTower; P.pos.set(x, G.inTower ? y : planetGround(x, z), z); }
-  else if (W.area === 'gal'){ if (W.room && GS.rooms){ const Rm = GS.rooms.find(r => r.id === W.room); if (Rm && !Rm.built) buildRoomNow(Rm); } P.pos.set(x, galH(x, z), z); if (GS.safe) GS.safe.copy(P.pos); }
+  P.sit = null;
+  if (W.area === 'planet'){ G.inTower = !!W.inTower; const fy = footY(x, y ?? planetGround(x, z), z, 'planet'); P.pos.set(x, fy ?? planetGround(x, z), z); }
+  else if (W.area === 'gal') restoreGalPos(W, x, y, z);
   else if (W.area === 'out' || W.area === 'sd'){ if (G.chapter !== 1) P.pos.set(x, y, z); }
   if (W.sp && (G.fly || G.orbit)){ SP.pos.fromArray(W.sp.pos); SP.q.fromArray(W.sp.q).normalize(); SP.hull = W.sp.hull ?? SP.hull; SP.shield = W.sp.shield ?? SP.shield; SP.kills = W.sp.kills || 0; SP.t = Math.max(SP.t || 0, W.sp.t || 0); SP.throttle = W.sp.throttle ?? SP.throttle; for (const k in SP.barks || {}) SP.barks[k] = true; }
   if (W.obj && G.objectives){ for (const o of W.obj){ const ob = G.objectives.find(q => q.id === o.id); if (ob){ ob.done = ob.done || o.done; if (o.failed) ob.failed = true; } } renderObjectives(); }
@@ -13514,18 +13553,39 @@ function restoreWhere(sv){
   if (F.saberOn && !P.disguised && curArea !== 'space'){ P.saberOn = true; P.igniteK = 1; }
   camera.position.set(P.pos.x, P.pos.y + P.eye, P.pos.z);
 }
+/* Posición exacta en la superficie de un planeta, también dentro de edificios */
+function restoreGalPos(W, x, y, z){
+  let Rm = null;
+  if (GS.rooms && GS.rooms.length){
+    if (W.room) Rm = GS.rooms.find(r => r.id === W.room) || null;
+    if (Rm && !Rm.built) buildRoomNow(Rm);
+    const here = roomAt(x, z) || null;               // la sala es la que contiene la posición guardada
+    if (Rm !== here){ if (Rm && Rm.lazy && Rm !== GS.inRoom) destroyRoom(Rm); Rm = here; }
+  }
+  setInside(Rm);   // cámara, luces y sonido del interior (o del exterior)
+  if (y == null) y = galH(x, z);
+  let fy = footY(x, y, z, 'gal'), p = null;
+  if (fy != null){ p = V3(x, fy, z); if (insideSolid(p)) p = null; }
+  if (!p && W.safe){ const [sx, sy, sz] = W.safe; const sfy = footY(sx, sy, sz, 'gal'); if (sfy != null && !!roomAt(sx, sz) === !!Rm) p = V3(sx, sfy, sz); }
+  if (!p && Rm && Rm.spawnIn) p = V3(Rm.spawnIn.x, galH(Rm.spawnIn.x, Rm.spawnIn.z), Rm.spawnIn.z);
+  if (!p){ const q = freeSpot(V3(x, y, z), 0.5); p = galGround(q.x, q.z) > -500 ? V3(q.x, galH(q.x, q.z), q.z) : V3(GS.pad.x, galH(GS.pad.x, GS.pad.z), GS.pad.z); }
+  P.pos.copy(p); if (GS.safe) GS.safe.copy(p);
+  LASTGROUND.area = 'gal'; LASTGROUND.pid = GS.pid; LASTGROUND.room = Rm ? Rm.id : null; LASTGROUND.pos = [p.x, p.y, p.z];
+}
 /* F5 guardar · F9 cargar */
 function quickSave(){
   if (G.phase === 'menu' || G.endShown){ return; }
   if (P.dead){ toast('NO SE PUEDE GUARDAR', 'no mientras estás caído', 1.8); audio.blip(false); return; }
-  saveGame(); const sv = loadSave();
-  if (!sv){ toast('ERROR AL GUARDAR', 'el navegador no permite guardar (¿modo privado?)', 3); return; }
+  saveGame(); const js = localStorage.getItem(SAVE_KEY), sv = loadSave();
+  if (!sv || !js){ toast('ERROR AL GUARDAR', 'el navegador no permite guardar (¿modo privado?)', 3); return; }
+  try { localStorage.setItem(QUICK_KEY, js); } catch (e) { toast('ERROR AL GUARDAR', 'sin espacio en el navegador', 3); return; }
+  if (SAVEDIR.handle && SAVEDIR.ok) writeFolderFile(js, 'partida_F5.json');
   toast('PARTIDA GUARDADA', (sv.where && sv.where.label) || '', 2.2); audio.blip(true);
   const ic = $('saveIcon'); if (ic){ ic.classList.remove('on'); void ic.offsetWidth; ic.classList.add('on'); }
 }
 addEventListener('keydown', e => {
   if (e.code === 'F5'){ e.preventDefault(); e.stopPropagation(); quickSave(); }
-  else if (e.code === 'F9'){ e.preventDefault(); e.stopPropagation(); const sv = loadSave(); if (!sv){ toast('NO HAY PARTIDA GUARDADA', 'pulsa F5 para guardar', 2); return; } ['pause', 'end'].forEach(id => $(id).classList.remove('on')); G.paused = false; continueFromSave(sv); }
+  else if (e.code === 'F9'){ e.preventDefault(); e.stopPropagation(); const sv = loadQuick() || loadSave(); if (!sv){ toast('NO HAY PARTIDA GUARDADA', 'pulsa F5 para guardar', 2); return; } ['pause', 'end'].forEach(id => $(id).classList.remove('on')); G.paused = false; continueFromSave(sv); }
 }, true);
 
 /* ============================================================
@@ -13548,35 +13608,43 @@ async function chooseSaveFolder(){
     let dir = base;
     if (base.name !== 'Star Wars RPG'){ const mg = base.name === 'My Games' ? base : await base.getDirectoryHandle('My Games', { create: true }); dir = await mg.getDirectoryHandle('Star Wars RPG', { create: true }); }
     SAVEDIR.handle = dir; SAVEDIR.ok = true; await sdSet('dir', dir); refreshFolderBtns();
-    const js = localStorage.getItem(SAVE_KEY); if (js) await writeFolderFile(js);
+    const js = localStorage.getItem(SAVE_KEY); if (js) await writeFolderFile(js); const jq = localStorage.getItem(QUICK_KEY); if (jq) await writeFolderFile(jq, 'partida_F5.json');
     toast('CARPETA DE PARTIDAS', (base.name === 'Star Wars RPG' ? '' : base.name === 'My Games' ? 'My Games/' : base.name + '/My Games/') + 'Star Wars RPG · partida.json', 4);
   } catch (e) { if (e && e.name !== 'AbortError') toast('NO SE PUDO USAR LA CARPETA', String(e.message || e).slice(0, 80), 4); }
 }
-async function writeFolderFile(json){
+async function writeFolderFile(json, name = 'partida.json'){
   if (!SAVEDIR.handle || !SAVEDIR.ok) return false;
-  try { const f = await SAVEDIR.handle.getFileHandle('partida.json', { create: true }), w = await f.createWritable(); await w.write(json); await w.close();
+  try { const f = await SAVEDIR.handle.getFileHandle(name, { create: true }), w = await f.createWritable(); await w.write(json); await w.close();
+    if (name !== 'partida.json') return true;
     SAVEDIR.n = (SAVEDIR.n || 0) + 1; if (SAVEDIR.n % 20 === 1){ const b = await SAVEDIR.handle.getFileHandle('partida_copia.json', { create: true }), wb = await b.createWritable(); await wb.write(json); await wb.close(); }
     return true; } catch (e) { console.warn('carpeta de partidas', e); SAVEDIR.ok = false; refreshFolderBtns(); return false; }
 }
 function saveToFolder(json){ if (!SAVEDIR.handle || !SAVEDIR.ok) return; SAVEDIR.pend = json; clearTimeout(SAVEDIR.t); SAVEDIR.t = setTimeout(() => { const j = SAVEDIR.pend; SAVEDIR.pend = null; if (j) writeFolderFile(j); }, 800); }
-async function readFolderFile(ask){
+async function readFolderFile(ask, name = 'partida.json'){
   if (!SAVEDIR.handle) return null; if (!SAVEDIR.ok && !(await sdPerm(ask))) return null;
-  try { const f = await SAVEDIR.handle.getFileHandle('partida.json'); return JSON.parse(await (await f.getFile()).text()); } catch (e) { return null; }
+  try { const f = await SAVEDIR.handle.getFileHandle(name); return JSON.parse(await (await f.getFile()).text()); } catch (e) { return null; }
 }
-/* Continuar: la partida más reciente entre la del navegador y la de la carpeta */
-async function continueSmart(){
-  let sv = loadSave();
-  try { const f = await readFolderFile(true); if (f && (!sv || ((f.where && f.where.t) || 0) > ((sv.where && sv.where.t) || 0))){ sv = f; try { localStorage.setItem(SAVE_KEY, JSON.stringify(f)); } catch (e) {} } } catch (e) {}
+/* Trae de la carpeta las partidas que sean más nuevas que las del navegador */
+async function syncFromFolder(ask){
+  for (const [name, key, load] of [['partida.json', SAVE_KEY, loadSave], ['partida_F5.json', QUICK_KEY, loadQuick]]){
+    try { const f = await readFolderFile(ask, name), l = load(); if (f && svT(f) > svT(l)) localStorage.setItem(key, JSON.stringify(f)); } catch (e) {}
+    ask = false;
+  }
+}
+/* Continuar: tu guardado F5 (o el autoguardado si no hay F5 o si lo eliges) */
+async function continueSmart(kind){
+  try { await syncFromFolder(true); } catch (e) {}
+  const c = continuePick(), sv = kind === 'auto' ? (loadSave() || c.sv) : kind === 'quick' ? (loadQuick() || c.sv) : c.sv;
   if (sv) continueFromSave(sv); else toast('NO HAY PARTIDA GUARDADA', 'empieza una nueva o importa un archivo', 3);
 }
 function exportSave(){
-  const js = localStorage.getItem(SAVE_KEY); if (!js){ toast('NO HAY PARTIDA', 'guarda primero con F5', 2.5); return; }
+  const js = localStorage.getItem(QUICK_KEY) || localStorage.getItem(SAVE_KEY); if (!js){ toast('NO HAY PARTIDA', 'guarda primero con F5', 2.5); return; }
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([js], { type: 'application/json' })); a.download = 'StarWarsRPG_partida.json'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   toast('PARTIDA EXPORTADA', 'StarWarsRPG_partida.json (en Descargas)', 3.5);
 }
 function importSave(){
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,application/json';
-  inp.onchange = async () => { const f = inp.files && inp.files[0]; if (!f) return; try { const j = JSON.parse(await f.text()); if (!j || !j.rpg) throw new Error('no es una partida del juego'); localStorage.setItem(SAVE_KEY, JSON.stringify(j)); refreshContinueBtn(); toast('PARTIDA IMPORTADA', (j.where && j.where.label) || 'pulsa Continuar partida', 3.5); } catch (e) { toast('ARCHIVO NO VÁLIDO', String(e.message || e).slice(0, 80), 3.5); } };
+  inp.onchange = async () => { const f = inp.files && inp.files[0]; if (!f) return; try { const j = JSON.parse(await f.text()); if (!j || !j.rpg) throw new Error('no es una partida del juego'); localStorage.setItem(SAVE_KEY, JSON.stringify(j)); localStorage.setItem(QUICK_KEY, JSON.stringify(j)); refreshContinueBtn(); toast('PARTIDA IMPORTADA', (j.where && j.where.label) || 'pulsa Continuar partida', 3.5); } catch (e) { toast('ARCHIVO NO VÁLIDO', String(e.message || e).slice(0, 80), 3.5); } };
   inp.click();
 }
 function refreshFolderBtns(){ document.querySelectorAll('.saveDirBtn').forEach(b => { b.textContent = SAVEDIR.handle ? (SAVEDIR.ok ? '✓ Partidas en My Games/Star Wars RPG' : 'Carpeta de partidas (dar permiso)') : 'Guardar en Documentos/My Games'; }); }
@@ -13584,20 +13652,20 @@ function refreshFolderBtns(){ document.querySelectorAll('.saveDirBtn').forEach(b
   const sr = document.querySelector('#start .row'), pr = document.querySelector('#pause .row');
   if (sr) sr.insertAdjacentHTML('afterend', '<div class="row"><button class="btn small saveDirBtn">Guardar en Documentos/My Games</button><button class="btn small" id="importBtn">Importar partida</button><button class="btn small" id="exportBtn2">Exportar partida</button></div>');
   if (pr) pr.insertAdjacentHTML('afterend', '<div class="row"><button class="btn small saveDirBtn">Guardar en Documentos/My Games</button><button class="btn small" id="exportBtn">Exportar partida</button></div>');
-  document.querySelectorAll('.saveDirBtn').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); if (SAVEDIR.handle && !SAVEDIR.ok) sdPerm(true).then(ok => { if (ok){ const js = localStorage.getItem(SAVE_KEY); if (js) writeFolderFile(js); toast('CARPETA DE PARTIDAS', 'guardando en My Games/Star Wars RPG', 3); } }); else chooseSaveFolder(); }));
+  document.querySelectorAll('.saveDirBtn').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); if (SAVEDIR.handle && !SAVEDIR.ok) sdPerm(true).then(ok => { if (ok){ const js = localStorage.getItem(SAVE_KEY); if (js) writeFolderFile(js); const jq = localStorage.getItem(QUICK_KEY); if (jq) writeFolderFile(jq, 'partida_F5.json'); toast('CARPETA DE PARTIDAS', 'guardando en My Games/Star Wars RPG', 3); } }); else chooseSaveFolder(); }));
   for (const id of ['exportBtn', 'exportBtn2']){ const b = $(id); if (b) b.addEventListener('click', e => { e.stopPropagation(); exportSave(); }); }
   const ib = $('importBtn'); if (ib) ib.addEventListener('click', e => { e.stopPropagation(); importSave(); });
   // al abrir el juego: recuperar la carpeta elegida y, si ya hay permiso, traer la partida más reciente
   sdGet('dir').then(async h => { if (!h) return; SAVEDIR.handle = h; const ok = await sdPerm(false);
-    if (ok){ const f = await readFolderFile(false), sv = loadSave(); if (f && (!sv || ((f.where && f.where.t) || 0) > ((sv.where && sv.where.t) || 0))){ try { localStorage.setItem(SAVE_KEY, JSON.stringify(f)); } catch (e) {} } }
-    else if (!loadSave()){ const b = $('continueBtn'); if (b){ b.style.display = ''; b.innerHTML = 'Continuar partida<small style="display:block;font-size:11px;opacity:.75;margin-top:3px">desde My Games/Star Wars RPG</small>'; } }
-    refreshContinueBtn(); if (!loadSave() && SAVEDIR.handle && $('continueBtn')) $('continueBtn').style.display = ''; });
+    if (ok) await syncFromFolder(false);
+    else if (!loadSave() && !loadQuick()){ const b = $('continueBtn'); if (b){ b.style.display = ''; b.innerHTML = 'Continuar partida<small style="display:block;font-size:11px;opacity:.75;margin-top:3px">desde My Games/Star Wars RPG</small>'; } }
+    refreshContinueBtn(); if (!loadSave() && !loadQuick() && SAVEDIR.handle && $('continueBtn')) $('continueBtn').style.display = ''; });
   refreshFolderBtns();
 })();
 
 
 /* Acceso de depuración (pruebas automáticas) */
-window.__gal = { directorTick, dirProcTick, dirApply, dirAddQuest, dirRegister, sideQ, get DIRQ(){ return SAGA.dirQuests; }, cineSay, playCine, cineShotAt, cineClear, cineBodies, segHit, galH, get curArea(){ return curArea; }, cineSkip, cineCan, get CINE_ST(){ return G.cine && G.cine.st; }, get CINE_JUNK(){ return CINE.junk.length; }, sagaRumors, dressOK, poiOut, get GSr(){ return GS.rooms; }, roomAt, enterRoomNow, exitRoomNow, buildRoomNow, roomInteract, sitDown, playerStand, unstickTick, insideSolid, bandBeat, get UNSTUCK(){ return UNSTUCK; }, SABER_COLORS, SP, saveGame, loadSave, continueFromSave, quickSave, SK, doSkill, useSkill, tpHandPos, tpThrowing, get avatarSaber(){ return avatarSaber; }, get avatar(){ return avatar; }, LOOK, RPG, SIDEQ, offerSide, sideRunStep, sideGivers, galTaskInteract, poiPos, COMPANIONS, recruit, dismissCompanion, sabaccHand, brawlStart, hunterTick, agentsInit, repAdd, bountyLevel, npcHit, talkTo, advanceLines, computeInteract, tryInteract, updateInteract: typeof updateInteract === "function" ? updateInteract : null, renderer, scene, camera, quality, SAGA, GS, OR, TASKS, GALAXY, SAGA_CH, enterSurface, enterOrbit, buildSurface, sagaStartChapter, sagaRunStep, sagaBegin, galJump, startLanding, openGalMap, closeGalMap, choose, pickChoice, galTakeoff, veyraTakeoff, startSagaFresh, boardVengador, setupVengadorFinal, leaveVengador, informantTalk, acceptContract, contractDone, galInteract, galTalk, runTalk, taskText, sagaObjectives, galDominion, alignAdd, P, G, npcs, sith, folk, WORLD, PLACES, keys, sim(sec){ for (let t = 0; t < sec; t += 1/30) if (!G.paused) step(1/30); } };
+window.__gal = { directorTick, dirProcTick, dirApply, dirAddQuest, dirRegister, sideQ, get DIRQ(){ return SAGA.dirQuests; }, get COLSgal(){ return COLS.gal; }, loadQuick, continuePick, cineSay, playCine, cineShotAt, cineClear, cineBodies, segHit, galH, get curArea(){ return curArea; }, cineSkip, cineCan, get CINE_ST(){ return G.cine && G.cine.st; }, get CINE_JUNK(){ return CINE.junk.length; }, sagaRumors, dressOK, poiOut, get GSr(){ return GS.rooms; }, roomAt, enterRoomNow, exitRoomNow, buildRoomNow, roomInteract, sitDown, playerStand, unstickTick, insideSolid, bandBeat, get UNSTUCK(){ return UNSTUCK; }, SABER_COLORS, SP, saveGame, loadSave, continueFromSave, quickSave, SK, doSkill, useSkill, tpHandPos, tpThrowing, get avatarSaber(){ return avatarSaber; }, get avatar(){ return avatar; }, LOOK, RPG, SIDEQ, offerSide, sideRunStep, sideGivers, galTaskInteract, poiPos, COMPANIONS, recruit, dismissCompanion, sabaccHand, brawlStart, hunterTick, agentsInit, repAdd, bountyLevel, npcHit, talkTo, advanceLines, computeInteract, tryInteract, updateInteract: typeof updateInteract === "function" ? updateInteract : null, renderer, scene, camera, quality, SAGA, GS, OR, TASKS, GALAXY, SAGA_CH, enterSurface, enterOrbit, buildSurface, sagaStartChapter, sagaRunStep, sagaBegin, galJump, startLanding, openGalMap, closeGalMap, choose, pickChoice, galTakeoff, veyraTakeoff, startSagaFresh, boardVengador, setupVengadorFinal, leaveVengador, informantTalk, acceptContract, contractDone, galInteract, galTalk, runTalk, taskText, sagaObjectives, galDominion, alignAdd, P, G, npcs, sith, folk, WORLD, PLACES, keys, sim(sec){ for (let t = 0; t < sec; t += 1/30) if (!G.paused) step(1/30); } };
 
 /* ============================================================
    BUCLE PRINCIPAL
