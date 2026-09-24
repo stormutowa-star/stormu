@@ -7607,7 +7607,7 @@ function drawMinimap(){
     if (sith.active && !sith.dead) dot(sith.pos.x, sith.pos.z, '#ff2a2a', 4, '#fff');
   }
   // objetivo
-  const m = currentMarker();
+  const m = curArea === 'gal' && typeof mmGalExtras === 'function' ? (mmGalExtras(c, W2, R), null) : currentMarker();
   if (m){ let [a, b] = W2(m.x, m.z); const d = Math.hypot(a, b); if (d > R - 10){ a *= (R - 10)/d; b *= (R - 10)/d; }
     c.save(); c.translate(a, b); c.rotate(-P.yaw); c.fillStyle = '#ffc53d'; c.beginPath(); c.moveTo(0, -6); c.lineTo(5, 0); c.lineTo(0, 6); c.lineTo(-5, 0); c.closePath(); c.fill(); c.restore(); }
   c.restore();
@@ -7961,7 +7961,7 @@ function ambientParticles(kind){
   for (let i = 0; i < N; i++){ pos[i*3] = (Math.random() - 0.5)*80; pos[i*3 + 1] = Math.random()*40; pos[i*3 + 2] = (Math.random() - 0.5)*80; }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   const col = { rain: 0xa8b8c8, snow: 0xffffff, ember: 0xff8a3a, dust: 0xe8d0a0, spore: 0xd8ff9a }[kind];
-  const pts = new THREE.Points(g, new THREE.PointsMaterial({ color: new THREE.Color(col).multiplyScalar(kind === 'ember' || kind === 'spore' ? 2 : 1), size: kind === 'rain' ? 0.08 : kind === 'snow' ? 0.14 : 0.1, transparent: true, opacity: kind === 'dust' ? 0.35 : 0.8, depthWrite: false, blending: kind === 'ember' || kind === 'spore' ? THREE.AdditiveBlending : THREE.NormalBlending }));
+  const pts = new THREE.Points(g, new THREE.PointsMaterial({ color: new THREE.Color(col).multiplyScalar(kind === 'ember' ? 2 : kind === 'spore' ? 1.1 : 1), size: kind === 'rain' ? 0.08 : kind === 'snow' ? 0.14 : kind === 'spore' ? 0.06 : 0.1, transparent: true, opacity: kind === 'dust' ? 0.35 : 0.8, depthWrite: false, blending: kind === 'ember' || kind === 'spore' ? THREE.AdditiveBlending : THREE.NormalBlending }));
   pts.frustumCulled = false; galGroup.add(pts);
   const vy = { rain: -28, snow: -2.2, ember: 1.6, dust: -0.4, spore: 0.3 }[kind], vx = { rain: -2, snow: 1.2, ember: 0.4, dust: 5, spore: 0.2 }[kind];
   GS.anim.push(dt => { const a = pts.geometry.attributes.position, cp = camera.position;
@@ -8590,7 +8590,7 @@ function buildSurface(pid){
   roomsPopulate(); classifyLayers();
 }
 const SUN2_TEX = canvasTex(64, 64, c => { const g = c.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,245,225,1)'); g.addColorStop(0.18, 'rgba(255,220,170,.8)'); g.addColorStop(1, 'rgba(255,200,150,0)'); c.fillStyle = g; c.fillRect(0, 0, 64, 64); });
-function hideGalSky(){ if (GS.sun2){ skyRoot.remove(GS.sun2); GS.sun2 = null; } }
+function hideGalSky(){ if (GS.sun2){ skyRoot.remove(GS.sun2); GS.sun2 = null; } clearSkyBodies(); }
 
 /* Entrar en la superficie (tras la cinemática de aterrizaje o al cargar partida) */
 function enterSurface(pid, opts = {}){
@@ -9072,7 +9072,8 @@ function drawGalMap(){
     c.fillStyle = col; c.beginPath(); c.arc(x, y, (id === GMAP.sel ? 7 : 5)*k, 0, Math.PI*2); c.fill();
     if (id === OR.pid){ c.strokeStyle = '#fff'; c.lineWidth = 1.5*k; c.beginPath(); c.arc(x, y, 11*k, 0, Math.PI*2); c.stroke(); }
     if (id === obj){ c.strokeStyle = '#ffc53d'; c.lineWidth = 2*k; c.beginPath(); c.moveTo(x, y - 16*k); c.lineTo(x + 7*k, y - 9*k); c.lineTo(x, y - 2*k); c.lineTo(x - 7*k, y - 9*k); c.closePath(); c.stroke(); }
-    c.fillStyle = id === GMAP.sel ? '#fff' : 'rgba(220,232,245,.85)'; c.font = `${(id === GMAP.sel ? 13 : 11.5)*k}px Bahnschrift, Arial`; c.textAlign = 'left'; c.fillText(P_.name, x + 9*k, y + 4*k); }
+    c.fillStyle = id === GMAP.sel ? '#fff' : 'rgba(220,232,245,.85)'; c.font = `${(id === GMAP.sel ? 13 : 11.5)*k}px Bahnschrift, Arial`; c.textAlign = 'left'; c.fillText(P_.name, x + 9*k, y + 4*k); gmMissionIcons(c, id, x, y, k); }
+  gmLegend(c, W, H_, k);
   c.fillStyle = 'rgba(255,150,130,.85)'; c.font = `${12*k}px Bahnschrift, Arial`; c.textAlign = 'right'; c.fillText('DOMINIO IMPERIAL DE LA GALAXIA: ' + galDominion() + '%', W - 16*k, H_ - 18*k);
 }
 function renderGalSide(){
@@ -9401,8 +9402,8 @@ function sagaObjectives(){
   const R = TASKS.story, C = SAGA_CH[SAGA.ch];
   if (R && !R.done){ const h = taskHint(R); list.push({ id: 'saga', text: '◆ <b>' + (C ? C.title : '') + '</b>' + dueText() + '<br>' + taskText(R) + (h ? '<br><span style="opacity:.75;font-size:12px">' + h + '</span>' : ''), pos: () => taskPos(R) }); }
   else if (C && !SAGA.ending) list.push({ id: 'saga', text: '◆ <b>' + C.title + '</b>', opt: false });
-  const K = TASKS.contract; if (K && !K.done){ const h = taskHint(K); list.push({ id: 'contract', text: '<b>Contrato</b><br>' + (SAGA.contract ? SAGA.contract.text : taskText(K)) + (h ? '<br><span style="opacity:.75;font-size:12px">' + h + '</span>' : ''), pos: R && !R.done ? null : () => taskPos(K), opt: !!(R && !R.done) }); }
-  const sq = sideObjective(); if (sq){ sq.opt = !!(R && !R.done); if (sq.opt) sq.pos = null; list.push(sq); }
+  const K = TASKS.contract; if (K && !K.done){ const h = taskHint(K); list.push({ id: 'contract', text: '<b>Contrato</b><br>' + (SAGA.contract ? SAGA.contract.text : taskText(K)) + (h ? '<br><span style="opacity:.75;font-size:12px">' + h + '</span>' : ''), pos: () => taskPos(K), opt: !!(R && !R.done) }); }
+  const sq = sideObjective(); if (sq){ sq.opt = !!(R && !R.done); list.push(sq); }
   if (curArea === 'gal' && GS.informant && !SAGA.contract) list.push({ id: 'inf', text: 'Contratos: ' + GS.informant.name + ' (' + (GS.names.cantina || 'cantina') + ')', opt: true });
   return list;
 }
@@ -10057,8 +10058,8 @@ function skyVariant(base, kind){
   const key = base + '_' + kind; if (PRESETS[key]) return key;
   const B = PRESETS[base], c = (h, k, tint) => { const col = new THREE.Color(h).multiplyScalar(k); if (tint) col.lerp(new THREE.Color(tint), 0.35); return col.getHex(); };
   PRESETS[key] = kind === 'n'
-    ? Object.assign({}, B, { top: c(B.top, 0.08, 0x0a1430), mid: c(B.mid, 0.12, 0x10204a), bottom: c(B.bottom, 0.12), sun: 0x9fb8ff, sunI: 0.55, hemiS: c(B.hemiS, 0.35, 0x3a4a7a), hemiG: c(B.hemiG, 0.25), hemiI: 0.9, fog: c(B.fog, 0.14, 0x0a1428), fogF: Math.min(B.fogF, 520), stars: 1, sunSize: 0, exp: 1.2 })
-    : Object.assign({}, B, { top: c(B.top, 0.7, 0x34437e), mid: c(B.mid, 1.0, 0xf4a070), bottom: c(B.bottom, 0.6), sun: 0xffa060, sunI: B.sunI*0.65, fog: c(B.fog, 0.8, 0xb88070), stars: 0.3, exp: 1.05 });
+    ? Object.assign({}, B, { top: c(B.top, 0.08, 0x0a1430), mid: c(B.mid, 0.12, 0x10204a), bottom: c(B.bottom, 0.12), sun: 0x9fb8ff, sunI: 0.55, hemiS: c(B.hemiS, 0.35, 0x3a4a7a), hemiG: c(B.hemiG, 0.25), hemiI: 0.9, fog: c(B.fog, 0.14, 0x0a1428), fogF: Math.min(B.fogF, 520), stars: B.overcast ? 0 : 1, sunSize: 0, exp: 1.2 })
+    : Object.assign({}, B, { top: c(B.top, 0.7, 0x34437e), mid: c(B.mid, 1.0, 0xf4a070), bottom: c(B.bottom, 0.6), sun: 0xffa060, sunI: B.sunI*0.65, fog: c(B.fog, 0.8, 0xb88070), stars: B.overcast ? 0 : 0.3, exp: 1.05 });
   return key;
 }
 function galSkyTick(){
@@ -12158,7 +12159,7 @@ const INTERIORS = {
   ilum:      [{ poi: 'cantina', kind: 'cantina', theme: 'refugio', facade: 'bunker', sign: 'Barracón' }, { poi: 'garrison', kind: 'garrison', door: 'imp' }, { poi: 'hangar', kind: 'hangar', door: 'box', o: { noShips: false, sub: 'Hangar de extracción' } }],
   mustafar:  [{ poi: 'cantina', kind: 'cantina', theme: 'refugio', facade: 'bunker', sign: 'Barracón minero' }, { poi: 'landmark', kind: 'fortress', door: 'box' }, { poi: 'garrison', kind: 'garrison', door: 'imp' }],
   geonosis:  [{ poi: 'cantina', kind: 'outpost', facade: 'bunker', o: { tone: 0xa8785a, fog: 0x1a0e08, hemiS: 0xffc8a0, amb: 'canyon', sub: 'Barracón abandonado' } }],
-  dagobah:   [{ poi: 'hut', kind: 'hut', door: 'at', at: [0, 3.65, 0] }, { poi: 'landmark', kind: 'cave', door: 'at', at: [0, 9.05, 0], o: { roots: true, sub: 'Cueva del árbol oscuro' } }],
+  dagobah:   [{ poi: 'hut', kind: 'hut', door: 'at', at: [0, 3.62, 0], dopt: { w: 1.3, h: 1.75, arch: true, light: 0, frame: gm(0x4a3a24), panel: gm(0x3a2a18) } }, { poi: 'landmark', kind: 'cave', door: 'at', at: [0, 5.62, 0], dopt: { w: 3, h: 2.8, light: 0, frame: gm(0x14120e), panel: gm(0x040404) }, o: { roots: true, sub: 'Cueva del árbol oscuro' } }],
   korriban:  [{ poi: 'cantina', kind: 'tomb', door: 'box', o: { sub: 'Tumba de Ajunta Pall' } }, { poi: 'landmark', kind: 'tomb', door: 'box', o: { sub: 'Tumba sin nombre' } }, { poi: 'garrison', kind: 'garrison', door: 'imp' }],
   tarsis:    [{ poi: 'cantina', kind: 'outpost', facade: 'bunker', o: { snow: true, jedi: true, light: 0x9fc8ff, sub: 'Refugio en ruinas' } }, { poi: 'garrison', kind: 'garrison', door: 'imp' }],
   yavin:     [{ poi: 'ruins', kind: 'temple', door: 'box', o: { vines: true, sub: 'Templo menor' } }, { poi: 'landmark', kind: 'temple', door: 'box', o: { vines: true, sub: 'Gran Templo massassi', glow: 0xffc070 } }],
@@ -12215,7 +12216,7 @@ function buildInteriors(pid){
     buildRoomNow(R, false);
     if (e.o && e.o.sub && (e.kind === 'moseisley' || e.kind === 'cantina')) R.sub = e.o.sub;
     R.doorOutPos = door.pos.clone(); R.spawnOut = door.pos.clone(); R.yawOut = door.yaw + Math.PI;
-    if (e.door !== 'hint' || !GS.doorHints[e.poi] || !GS.doorHints[e.poi].drawn) doorModel(b, door.face.x, door.face.y, door.face.z, door.yaw, { sign: door.sign || e.sign || (e.kind === 'cantina' ? name : null), signCol: e.kind === 'cantina' ? '#ffd9a0' : '#e8e8e8', light: ['garrison', 'archive', 'fortress', 'factory'].includes(e.kind) ? 0xff3a2a : 0xffc070, arch: ['palace', 'temple', 'tomb'].includes(e.kind) });
+    if (e.door !== 'hint' || !GS.doorHints[e.poi] || !GS.doorHints[e.poi].drawn) doorModel(b, door.face.x, door.face.y, door.face.z, door.yaw, Object.assign({ sign: door.sign || e.sign || (e.kind === 'cantina' ? name : null), signCol: e.kind === 'cantina' ? '#ffd9a0' : '#e8e8e8', light: ['garrison', 'archive', 'fortress', 'factory'].includes(e.kind) ? 0xff3a2a : 0xffc070, arch: ['palace', 'temple', 'tomb'].includes(e.kind) }, e.dopt || {}));
     GS.poisOut[e.poi] = door.pos.clone(); GS.pois[e.poi] = R.focus.clone();
     R.poi = e.poi;
   }
@@ -12271,6 +12272,287 @@ function cantinaAudioTick(){
     if (!style && GS.cantina && !GS.cantina.room){ const d = Math.hypot(P.pos.x - GS.cantina.pos.x, P.pos.z - GS.cantina.pos.z); if (cantinaMusicOn()){ style = 'swing'; vol = clamp(1 - (d - 6)/40, 0, 1)*0.14; } } }
   bandTick(style, vol, lp);
 }
+
+/* ============================================================
+   MUNDOS CANÓNICOS · 1 — piezas comunes y Dagobah
+   Árboles nudosos, flora instanciada, niebla baja, cielo con
+   gigantes gaseosos y lunas, y fauna del lore con movimiento
+   propio (voladores, babosas, serpientes, arañas, rebaños).
+   ============================================================ */
+const _UPV = new THREE.Vector3(0, 1, 0);
+/* Cilindro entre dos puntos (raíces, ramas, lianas) */
+function cylBetween(b, a, c, r0, r1, mat, seg = 6){
+  const d = V3(c.x - a.x, c.y - a.y, c.z - a.z), L_ = d.length(); if (L_ < 0.01) return;
+  const g = new THREE.CylinderGeometry(r1, r0, L_, seg); g.translate(0, L_/2, 0);
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(_UPV, d.normalize())); g.translate(a.x, a.y, a.z); b.addGeo(g, mat, true, true);
+}
+function blob(b, x, y, z, s, sy, mat){ const g = new THREE.IcosahedronGeometry(s, 1); g.scale(1, sy, 1); g.translate(x, y, z); b.addGeo(g, mat, true, true); }
+const leafMat = (k, col) => imat('lf_' + k, { color: col, roughness: 0.95, flatShading: true, side: THREE.FrontSide });
+/* Árbol nudoso de Dagobah: tronco torcido, raíces en arco, ramas bajas, copa oscura, musgo y lianas */
+function gnarlTree(b, x, z, s, r, o = {}){
+  const y = galH(x, z) - 0.2, H = (7 + r()*8)*s, bark = o.dead ? gm(0x1a1612, { roughness: 1 }) : gm(pick([0x4a3e2e, 0x42382a, 0x3e3426, 0x4a4232]), { roughness: 1 });
+  const lean = V3((r() - 0.5)*0.45, 1, (r() - 0.5)*0.45).normalize(), bend = V3((r() - 0.5)*0.5, 0, (r() - 0.5)*0.5);
+  const mid = V3(x + lean.x*H*0.45 + bend.x*s, y + H*0.45, z + lean.z*H*0.45 + bend.z*s), top = V3(x + lean.x*H, y + H*lean.y, z + lean.z*H);
+  cylBetween(b, V3(x, y, z), mid, 1.8*s, 1.05*s, bark, 7); cylBetween(b, mid, top, 1.05*s, 0.45*s, bark, 7);
+  // raíces aéreas en arco (dos tramos)
+  const nR = 6 + Math.floor(r()*4);
+  for (let k = 0; k < nR; k++){ const a = k/nR*Math.PI*2 + r()*0.5, R1 = (1.3 + r()*0.8)*s, R2 = (3.4 + r()*2.6)*s, hh = (2 + r()*2.4)*s;
+    const p0 = V3(x + Math.cos(a)*0.9*s, y + hh, z + Math.sin(a)*0.9*s), p1 = V3(x + Math.cos(a)*R1*1.7, y + hh*0.8, z + Math.sin(a)*R1*1.7), p2 = V3(x + Math.cos(a)*R2, y - 0.3, z + Math.sin(a)*R2);
+    cylBetween(b, p0, p1, 0.5*s, 0.38*s, bark, 5); cylBetween(b, p1, p2, 0.38*s, 0.2*s, bark, 5);
+    if (R2 > 3.6*s) glowc(p2.x - 0.3, p2.z - 0.3, p2.x + 0.3, p2.z + 0.3, y - 1, y + 0.4, 'root'); }
+  gcol(x - 1.2*s, z - 1.2*s, x + 1.2*s, z + 1.2*s, y - 1, y + H*0.7, 'tree');
+  const lm = [leafMat('dg0', 0x2f4a22), leafMat('dg1', 0x3a5a2a), leafMat('dg2', 0x28401c), leafMat('dg3', 0x44602e)], moss = gm(o.dead ? 0x6a6a5a : 0x7a8a5a, { roughness: 1 }), vine = gm(0x3a4a2a);
+  const nB = 4 + Math.floor(r()*3);
+  for (let k = 0; k < nB; k++){ const a = r()*Math.PI*2, t = 0.45 + r()*0.5, base = V3(x + lean.x*H*t, y + H*t, z + lean.z*H*t), L_ = (3.5 + r()*4.5)*s;
+    const elbow = V3(base.x + Math.cos(a)*L_*0.55, base.y + (0.2 + r()*0.4)*L_*0.55, base.z + Math.sin(a)*L_*0.55), tip = V3(base.x + Math.cos(a + (r() - 0.5)*0.6)*L_, elbow.y - r()*1.2*s, base.z + Math.sin(a + (r() - 0.5)*0.6)*L_);
+    cylBetween(b, base, elbow, 0.42*s, 0.26*s, bark, 5); cylBetween(b, elbow, tip, 0.26*s, 0.1*s, bark, 5);
+    if (!o.dead) for (let q = 0; q < 3; q++){ const u = 0.35 + q*0.32, bx = elbow.x + (tip.x - elbow.x)*u + (r() - 0.5)*1.5*s, bz = elbow.z + (tip.z - elbow.z)*u + (r() - 0.5)*1.5*s, by = elbow.y + (tip.y - elbow.y)*u + 0.3*s;
+      const g = new THREE.IcosahedronGeometry((1.0 + r()*1.1)*s, 0); g.scale(1.2, 0.72, 1.1); g.rotateY(r()*3); g.translate(bx, by, bz); b.addGeo(g, pick(lm), true, true); }
+    else { const t2 = V3(tip.x + (r() - 0.5)*2*s, tip.y + r()*1.5*s, tip.z + (r() - 0.5)*2*s); cylBetween(b, tip, t2, 0.1*s, 0.04*s, bark, 4); }
+    for (let m = 0; m < (o.dead ? 6 : 5); m++){ const u = 0.2 + r()*0.8, mx = base.x + (tip.x - base.x)*u, my = base.y + (tip.y - base.y)*u, mz = base.z + (tip.z - base.z)*u, ml = (1.2 + r()*3)*s;
+      b.add(0.08*s, ml, 0.06*s, moss, mx + (r() - 0.5)*0.4, my - ml/2, mz + (r() - 0.5)*0.4, false, false); }
+    if (!o.dead && r() < 0.6){ const gy = galH(tip.x, tip.z); cylBetween(b, V3(tip.x + (r() - 0.5)*0.6, gy - 0.2, tip.z + (r() - 0.5)*0.6), V3(tip.x, tip.y, tip.z), 0.04, 0.035, vine, 4); } }
+  if (!o.dead) for (let q = 0; q < 3; q++){ const g = new THREE.IcosahedronGeometry((1.4 + r()*1.2)*s, 0); g.scale(1.2, 0.8, 1.2); g.rotateY(r()*3); g.translate(top.x + (r() - 0.5)*2.5*s, top.y + (r() - 0.2)*1.4*s, top.z + (r() - 0.5)*2.5*s); b.addGeo(g, pick(lm), true, true); }
+  return { top, H };
+}
+/* Textura de fronda de helecho (recorte con transparencia) */
+const FERN_TEX = (() => { const t = canvasTex(64, 64, c => { c.clearRect(0, 0, 64, 64); c.strokeStyle = '#3a5a26'; c.lineWidth = 2; c.beginPath(); c.moveTo(32, 64); c.quadraticCurveTo(30, 30, 34, 2); c.stroke();
+  for (let i = 0; i < 14; i++){ const y = 60 - i*4, L_ = 26 - i*1.5; c.fillStyle = i % 2 ? '#4a7a32' : '#3e6a2a'; for (const s of [-1, 1]){ c.beginPath(); c.moveTo(32, y); c.quadraticCurveTo(32 + s*L_*0.6, y - 6, 32 + s*L_, y - 2); c.quadraticCurveTo(32 + s*L_*0.5, y - 1, 32, y + 1); c.fill(); } } }); t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearFilter; return t; })();
+/* Flora instanciada: helechos, arbustos, juncos, setas, nenúfares */
+function instFlora(kind, n, place, o = {}){
+  let geo, mat;
+  if (kind === 'fern'){ const a = new THREE.PlaneGeometry(1.6, 1.2); a.translate(0, 0.6, 0); a.rotateX(-0.35); const bq = a.clone(); bq.rotateY(Math.PI/2); const c2 = a.clone(); c2.rotateY(Math.PI); const d2 = a.clone(); d2.rotateY(-Math.PI/2); geo = mergeGeometries([a, bq, c2, d2]);
+    mat = new THREE.MeshStandardMaterial({ map: FERN_TEX, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.95, color: o.col || 0xffffff }); }
+  else if (kind === 'bush'){ geo = new THREE.IcosahedronGeometry(1, 1); geo.scale(1, 0.7, 1); mat = new THREE.MeshStandardMaterial({ color: o.col || 0x2f4a22, roughness: 1, flatShading: true }); }
+  else if (kind === 'reed'){ const g1 = new THREE.BoxGeometry(0.05, 1.8, 0.05); g1.translate(0, 0.9, 0); const g2 = g1.clone(); g2.rotateZ(0.12); g2.translate(0.15, 0, 0.05); const g3 = g1.clone(); g3.rotateX(-0.15); g3.translate(-0.1, 0, 0.12); geo = mergeGeometries([g1, g2, g3]); mat = new THREE.MeshStandardMaterial({ color: o.col || 0x6a7a3a, roughness: 1 }); }
+  else if (kind === 'shroom'){ const st = new THREE.CylinderGeometry(0.05, 0.07, 0.3, 5); st.translate(0, 0.15, 0); const cp = new THREE.SphereGeometry(0.18, 7, 4, 0, Math.PI*2, 0, Math.PI/2); cp.scale(1, 0.6, 1); cp.translate(0, 0.3, 0); geo = mergeGeometries([st.toNonIndexed(), cp.toNonIndexed()]); mat = o.glow ? gglow(o.col || 0x8affd8, 1.6) : new THREE.MeshStandardMaterial({ color: o.col || 0xc8b89a, roughness: 0.8 }); }
+  else if (kind === 'lily'){ geo = new THREE.CircleGeometry(0.45, 8, 0.4, Math.PI*1.8); geo.rotateX(-Math.PI/2); mat = new THREE.MeshStandardMaterial({ color: o.col || 0x3a6a2a, roughness: 0.6, side: THREE.DoubleSide }); }
+  else if (kind === 'grass'){ const a = new THREE.PlaneGeometry(0.9, 0.7); a.translate(0, 0.35, 0); const bq = a.clone(); bq.rotateY(Math.PI/2); geo = mergeGeometries([a, bq]); mat = new THREE.MeshStandardMaterial({ color: o.col || 0x5a8a3a, roughness: 1, side: THREE.DoubleSide }); }
+  const M_ = new THREE.InstancedMesh(geo, mat, n), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), r = rng(o.seed || 21); let k = 0;
+  for (let i = 0; i < n*4 && k < n; i++){ const pl = place(r); if (!pl) continue; const [x, z, sc] = pl, y = o.y != null ? o.y : galH(x, z);
+    m4.compose(p.set(x, y, z), q.setFromAxisAngle(_UPV, r()*6.28), s.set(sc, sc*(o.sy || 1)*(0.8 + r()*0.4), sc)); M_.setMatrixAt(k++, m4); }
+  M_.count = k; M_.castShadow = kind === 'bush'; M_.receiveShadow = true; galGroup.add(M_); return M_;
+}
+/* Niebla baja que se desliza entre los árboles */
+const MIST_TEX = (() => { const t = canvasTex(128, 128, c => { const r = rng(5); c.clearRect(0, 0, 128, 128); for (let i = 0; i < 40; i++){ const x = 20 + r()*88, y = 20 + r()*88, rr = 14 + r()*30, g = c.createRadialGradient(x, y, 0, x, y, rr); g.addColorStop(0, 'rgba(255,255,255,.35)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, 128, 128); } }); t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearFilter; return t; })();
+function groundMist(n, col, R0 = 180, y0 = 0.2, op = 0.55){
+  const mat = new THREE.MeshBasicMaterial({ map: MIST_TEX, color: col, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide }), list = [];
+  for (let i = 0; i < n; i++){ const m = new THREE.Mesh(new THREE.PlaneGeometry(26, 26), mat); m.rotation.x = -Math.PI/2; const a = Math.random()*6.28, d = Math.random()*R0; m.position.set(Math.cos(a)*d, y0 + Math.random()*1.4, Math.sin(a)*d); m.userData.v = V3(rand(-0.4, 0.4), 0, rand(-0.4, 0.4)); m.renderOrder = 2; galGroup.add(m); list.push(m); }
+  GS.anim.push(dt => { for (const m of list){ m.position.addScaledVector(m.userData.v, dt); m.rotation.z += dt*0.02; if (Math.hypot(m.position.x - P.pos.x, m.position.z - P.pos.z) > R0){ const a = Math.random()*6.28; m.position.x = P.pos.x + Math.cos(a)*R0*0.8; m.position.z = P.pos.z + Math.sin(a)*R0*0.8; } } });
+}
+/* Cielo: gigantes gaseosos, lunas y anillos (en la capa del exterior) */
+function skyBody(o){
+  const t = canvasTex(256, 128, c => { const r = rng(o.seed || 3); for (let y = 0; y < 128; y++){ const k = y/128, band = Math.sin(k*o.bands*Math.PI + r()*0.3), col = new THREE.Color(o.c1).lerp(new THREE.Color(o.c2), (band + 1)/2); c.fillStyle = '#' + col.getHexString(); c.fillRect(0, y, 256, 1); }
+    if (o.spot){ c.fillStyle = o.spot; c.beginPath(); c.ellipse(170, 78, 22, 9, 0, 0, 6.3); c.fill(); } for (let i = 0; i < 400; i++){ c.fillStyle = `rgba(255,255,255,${r()*0.06})`; c.fillRect(r()*256, r()*128, 20 + r()*40, 1); } });
+  t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearFilter;
+  const m = new THREE.Mesh(new THREE.SphereGeometry(o.r, 40, 24), new THREE.MeshBasicMaterial({ map: t, fog: false, color: o.tint || 0xffffff, transparent: !!o.op, opacity: o.op || 1 }));
+  m.position.set(...o.pos); m.rotation.z = o.tilt || 0; skyRoot.add(m); (GS.skyBodies = GS.skyBodies || []).push(m);
+  if (o.ring){ const rg = new THREE.RingGeometry(o.r*1.35, o.r*(o.ring), 64); const rm = new THREE.Mesh(rg, new THREE.MeshBasicMaterial({ color: o.ringCol || 0xd8c8a8, transparent: true, opacity: 0.45, side: THREE.DoubleSide, fog: false })); rm.position.copy(m.position); rm.rotation.set(Math.PI/2 - 0.35, 0.2, 0); skyRoot.add(rm); GS.skyBodies.push(rm); }
+  return m;
+}
+function clearSkyBodies(){ for (const m of GS.skyBodies || []) skyRoot.remove(m); GS.skyBodies = []; }
+
+/* ---------- Fauna del lore ---------- */
+function critterMat(col, k = 'cr'){ return gm(col, { roughness: 0.9 }); }
+function makeFlyer(o){
+  const g = new THREE.Group(), body = new THREE.Mesh(new THREE.BoxGeometry(0.25*o.s, 0.2*o.s, 0.7*o.s), critterMat(o.col)); g.add(body);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.18*o.s, 0.16*o.s, 0.3*o.s), critterMat(o.col2 || o.col)); head.position.z = 0.45*o.s; g.add(head);
+  const wings = [];
+  for (const s of [-1, 1]){ const wg = new THREE.Group(); wg.position.x = s*0.12*o.s; const w = new THREE.Mesh(new THREE.BoxGeometry(o.wing*o.s, 0.03*o.s, 0.45*o.s), critterMat(o.wcol || o.col)); w.position.x = s*o.wing*o.s/2; wg.add(w); g.add(wg); wings.push(wg); }
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.08*o.s, 0.06*o.s, 0.6*o.s), critterMat(o.col)); tail.position.z = -0.6*o.s; g.add(tail);
+  g.userData.wings = wings; g.traverse(q => { if (q.isMesh) q.castShadow = true; }); return g;
+}
+function spawnFlyers(n, o){
+  for (let i = 0; i < n; i++){ const g = makeFlyer(o); galGroup.add(g); const c = V3(rand(-o.R, o.R), 0, rand(-o.R, o.R)), rad = o.rad[0] + Math.random()*(o.rad[1] - o.rad[0]), h = o.h[0] + Math.random()*(o.h[1] - o.h[0]), sp = (o.spd || 1)*(0.6 + Math.random()*0.6)*(Math.random() < 0.5 ? 1 : -1), ph = Math.random()*6.28;
+    GS.anim.push(dt => { const t = G.time*sp/rad*6 + ph; const x = c.x + Math.cos(t)*rad, z = c.z + Math.sin(t)*rad, y = galH(x, z) + h + Math.sin(t*2.3)*o.bob;
+      g.position.set(x, y, z); g.rotation.y = Math.atan2(-Math.sin(t)*sp, Math.cos(t)*sp) + (sp > 0 ? 0 : Math.PI); g.rotation.z = (sp > 0 ? -1 : 1)*0.35;
+      const f = Math.sin(G.time*(o.flap || 9) + ph)*(o.flapA || 0.6); g.userData.wings[0].rotation.z = f; g.userData.wings[1].rotation.z = -f; }); }
+}
+function makeSlug(col){ const g = new THREE.Group(), m = critterMat(col); for (let i = 0; i < 5; i++){ const s = new THREE.Mesh(new THREE.SphereGeometry(0.55 - i*0.07, 8, 6), m); s.scale.set(1, 0.6, 1.3); s.position.set(0, 0.3, -i*0.55); g.add(s); }
+  for (const s of [-1, 1]){ const st = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.5, 5), m); st.position.set(s*0.18, 0.75, 0.3); st.rotation.x = 0.4; g.add(st); const e = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 4), gm(0x111111)); e.position.set(s*0.18, 1.0, 0.42); g.add(e); } return g; }
+function spawnWaders(n, make, o){
+  for (let i = 0; i < n; i++){ const g = make(); galGroup.add(g); let pos = null; for (let k = 0; k < 40; k++){ const x = rand(-o.R, o.R), z = rand(-o.R, o.R); const h = galH(x, z); if (h > o.hmin && h < o.hmax){ pos = V3(x, h, z); break; } } if (!pos) continue;
+    const st = { pos, tgt: pos.clone(), t: 0 };
+    GS.anim.push(dt => { st.t -= dt; if (st.t <= 0){ st.t = 6 + Math.random()*10; for (let k = 0; k < 8; k++){ const x = st.pos.x + rand(-12, 12), z = st.pos.z + rand(-12, 12), h = galH(x, z); if (h > o.hmin && h < o.hmax){ st.tgt.set(x, 0, z); break; } } }
+      const dx = st.tgt.x - st.pos.x, dz = st.tgt.z - st.pos.z, d = Math.hypot(dx, dz); if (d > 0.3){ st.pos.x += dx/d*o.spd*dt; st.pos.z += dz/d*o.spd*dt; g.rotation.y = Math.atan2(dx, dz); }
+      st.pos.y = Math.max(galH(st.pos.x, st.pos.z), o.floatY ?? -1e9); g.position.copy(st.pos); g.scale.z = 1 + Math.sin(G.time*1.5 + i)*0.06; }); }
+}
+/* Serpiente dragón: jorobas que asoman del agua en las pozas hondas */
+function spawnDragonsnake(pool){
+  const segs = [], m = critterMat(0x2a3a2a); for (let i = 0; i < 7; i++){ const s = new THREE.Mesh(new THREE.SphereGeometry(0.7 - i*0.05, 8, 6), m); galGroup.add(s); segs.push(s); }
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.5, 1.4), m); galGroup.add(head); let t = Math.random()*20;
+  GS.anim.push(dt => { t += dt; const cyc = t % 14, up = cyc < 5 ? Math.sin(cyc/5*Math.PI) : 0, a = t*0.25;
+    segs.forEach((s, i) => { const u = a - i*0.12; s.position.set(pool.x + Math.cos(u)*pool.r*0.6, -0.9 + up*1.3*Math.sin((i/6)*Math.PI + 0.3), pool.z + Math.sin(u)*pool.r*0.6); s.visible = up > 0.05; });
+    head.position.set(pool.x + Math.cos(a + 0.12)*pool.r*0.6, -0.6 + up*1.4, pool.z + Math.sin(a + 0.12)*pool.r*0.6); head.rotation.y = -a; head.visible = up > 0.3; });
+}
+/* Araña blanca de patas largas (Dagobah) */
+function spawnKnobbySpider(pos){
+  const g = new THREE.Group(), m = critterMat(0xd8d4c8); const body = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), m); body.position.y = 2.2; g.add(body);
+  const legs = []; for (let i = 0; i < 8; i++){ const a = i/8*Math.PI*2; const L_ = new THREE.Group(); L_.position.set(0, 2.2, 0); L_.rotation.y = a; const up = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 1.8, 5), m); up.position.set(0, 0.5, 0.75); up.rotation.x = 1.0; L_.add(up); const dn = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 2.6, 5), m); dn.position.set(0, -0.6, 1.8); dn.rotation.x = -0.25; L_.add(dn); g.add(L_); legs.push(L_); }
+  galGroup.add(g); const st = { pos: pos.clone(), tgt: pos.clone(), t: 0 };
+  GS.anim.push(dt => { st.t -= dt; if (st.t <= 0){ st.t = 8 + Math.random()*10; st.tgt.set(pos.x + rand(-25, 25), 0, pos.z + rand(-25, 25)); }
+    const dx = st.tgt.x - st.pos.x, dz = st.tgt.z - st.pos.z, d = Math.hypot(dx, dz), mv = d > 0.3; if (mv){ st.pos.x += dx/d*0.7*dt; st.pos.z += dz/d*0.7*dt; g.rotation.y = Math.atan2(dx, dz); }
+    g.position.set(st.pos.x, galH(st.pos.x, st.pos.z), st.pos.z); legs.forEach((L_, i) => L_.rotation.x = mv ? Math.sin(G.time*4 + i*1.6)*0.15 : 0); body.position.y = 2.2 + Math.sin(G.time*2)*0.05; });
+}
+
+/* ===== DAGOBAH: pantano cubierto de árboles nudosos, niebla y vida ===== */
+Object.assign(PRESETS.g_swamp, { top: 0x3a4436, mid: 0x7a8872, bottom: 0x2a3224, sun: 0xd0d8b0, sunI: 1.0, hemiS: 0x9aaa8a, hemiG: 0x26301e, hemiI: 1.3, fog: 0x62705a, fogN: 1, fogF: 78, sunSize: 0, exp: 1.12, overcast: true });
+BIOMES.swamp = (P_, r) => {
+  GS.waterY = 0;
+  const CLEAR = [[0, 40, 15, 0.35], [0, 0, 11, 0.35], [90, -70, 13, 0.7], [0, -120, 15, 0.25], [-34, -8, 9, 0.3], [46, 40, 10, -0.2], [170, -150, 12, 0.3], [28, 12, 8, 0.4]];
+  const POOLS = [{ x: 48, z: -18, r: 11 }, { x: -60, z: 62, r: 13 }, { x: 120, z: 30, r: 10 }, { x: -110, z: -80, r: 14 }];
+  GS.H = (x, z) => { const n = fbm2(x*0.03, z*0.03), m = fbm2(x*0.011 + 4, z*0.011 - 2), d = Math.hypot(x, z);
+    let h = (n - 0.5)*3.4 + (m - 0.5)*2.6; h = Math.max(h, -1.05);
+    for (const p of POOLS){ const dd = Math.hypot(x - p.x, z - p.z); if (dd < p.r) h = Math.min(h, lerp(-3.2, -1.05, Math.pow(dd/p.r, 3))); }
+    for (const [cx, cz, rr, hh] of CLEAR){ const dd = Math.hypot(x - cx, z - cz); if (dd < rr) h = lerp(hh, h, Math.pow(dd/rr, 2.2)); }
+    return h + ramp(d, 420, 620)*20; };
+  GS.sky = 'g_swamp';
+  const cave = GS.pois = stdPois({ pad: poiAt(0, 40), hut: poiAt(90, -70) });
+  galTerrain(1400, 190, (x, z, h, c) => { const n = fbm2(x*0.08, z*0.08), dc = Math.hypot(x, z + 120); if (h < -0.4) c.setRGB(0.1, 0.13, 0.08); else if (n > 0.62) c.setRGB(0.28 + n*0.08, 0.36 + n*0.1, 0.16); else c.setRGB(0.2 + n*0.08, 0.2 + n*0.06, 0.12); if (dc < 26) c.multiplyScalar(0.55 + dc/60); });
+  const wat = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400).rotateX(-Math.PI/2), new THREE.MeshStandardMaterial({ color: 0x28361f, roughness: 0.15, metalness: 0.35, transparent: true, opacity: 0.88 })); wat.position.y = -0.35; galGroup.add(wat);
+  const b = makeBatcher(); landingPad(b, 0, 40, 10, gm(0x4a4a3a));
+  GS.names = { plaza: 'Claro fangoso', cantina: 'Tronco hueco', market: 'Maraña de raíces', garrison: 'Pozas del norte', landmark: 'Cueva del árbol oscuro', wild: 'Ciénaga', ruins: 'Árbol muerto', hangar: 'Carguero hundido', pad: 'Claro de aterrizaje', hut: 'Choza del viejo maestro' };
+  const inClear = (x, z, m = 0) => CLEAR.some(([cx, cz, rr]) => Math.hypot(x - cx, z - cz) < rr + m) || POOLS.some(p => Math.hypot(x - p.x, z - p.z) < p.r + 1);
+  // árboles nudosos: el bosque cerrado alrededor de los claros
+  let n = 0; const trees = []; for (let i = 0; i < 3000 && n < 235; i++){ const a = r()*6.28, d = 10 + Math.pow(r(), 0.9)*250, x = Math.cos(a)*d, z = Math.sin(a)*d; if (inClear(x, z, 2.5) || trees.some(t => Math.hypot(t[0] - x, t[1] - z) < 7.5)) continue; trees.push([x, z]); gnarlTree(b, x, z, 0.65 + r()*0.8, r); n++; }
+  // cortinas de lianas y musgo entre los árboles
+  for (let i = 0; i < 420; i++){ const [tx, tz] = pick(trees), a = r()*6.28, d = 2 + r()*6, x = tx + Math.cos(a)*d, z = tz + Math.sin(a)*d; if (inClear(x, z, 1)) continue; const top = 7 + r()*7, low = 0.8 + r()*3; b.add(0.05, top - low, 0.05, gm(r() < 0.5 ? 0x3a4a2a : 0x6a7a52, { roughness: 1 }), x, galH(x, z) + low + (top - low)/2, z, false, false); }
+  // la choza del viejo maestro, metida entre las raíces de un árbol
+  const Hh = GS.pois.hut, hy = galH(Hh.x, Hh.z), mud = gm(0x6a5a40, { roughness: 1 }), mud2 = gm(0x5a4a34, { roughness: 1 });
+  gnarlTree(b, Hh.x - 1, Hh.z - 6.5, 1.25, rng(606));
+  gCyl(b, 3.2, 3.6, 2.4, mud, Hh.x, hy, Hh.z, 14); gDome(b, 3.4, mud2, Hh.x, hy + 2.4, Hh.z, { sy: 0.75 });
+  for (const [dx, sz] of [[-2.6, 1.6], [2.8, 1.3]]){ gCyl(b, sz, sz*1.1, 1.8, mud, Hh.x + dx, hy, Hh.z - 1.2, 10); gDome(b, sz, mud2, Hh.x + dx, hy + 1.8, Hh.z - 1.2, { sy: 0.7 }); }
+  const tr = new THREE.TorusGeometry(0.85, 0.16, 6, 16); tr.translate(Hh.x, hy + 0.95, Hh.z + 3.45); b.addGeo(tr, gm(0x4a3a24), true, true);
+  for (const s of [-1, 1]){ const w = new THREE.TorusGeometry(0.32, 0.08, 5, 12); w.rotateY(s*0.5); w.translate(Hh.x + s*1.9, hy + 1.6, Hh.z + 2.9); b.addGeo(w, gm(0x4a3a24), false, true); const gl = new THREE.CircleGeometry(0.3, 12); gl.rotateY(s*0.5); gl.translate(Hh.x + s*1.9, hy + 1.6, Hh.z + 2.92); b.addGeo(gl, gglow(0xffb060, 1.6), false, false); }
+  gCyl(b, 0.18, 0.22, 1.6, gm(0x3a3a38, { metalness: 0.4 }), Hh.x + 1.4, hy + 3.2, Hh.z - 0.8, 8, { col: false });
+  for (let i = 0; i < 9; i++){ const a = -0.6 + i*0.15; gCyl(b, 0.05, 0.06, 0.9, gm(0x5a4a30), Hh.x + Math.sin(a)*6, hy, Hh.z + Math.cos(a)*6, 4, { col: false }); }
+  for (let i = 0; i < 5; i++) gCyl(b, 0.28, 0.2, 0.4, gm(pick([0x7a5a3a, 0x6a6a5a])), Hh.x - 3 + i*0.5, hy, Hh.z + 3.6 + (i % 2)*0.4, 8, { col: false });
+  for (let i = 0; i < 6; i++) gCyl(b, 0.5, 0.55, 0.15, gm(0x6a6458), Hh.x + Math.sin(i*0.4)*1.5, galH(Hh.x, Hh.z + 5 + i*1.6) - 0.05, Hh.z + 5 + i*1.6, 8, { col: false });
+  const hl = new THREE.PointLight(0xffb060, 5, 14, 1.8); hl.position.set(Hh.x, hy + 1.8, Hh.z + 4.5); galGroup.add(hl);
+  // la cueva: bajo un árbol negro y muerto, un agujero oscuro entre las raíces
+  const C = GS.pois.landmark, cyv = galH(C.x, C.z);
+  gnarlTree(b, C.x, C.z, 2.2, rng(666), { dead: true });
+  gCyl(b, 3.6, 5.5, 3.2, gm(0x14120e), C.x, cyv - 0.6, C.z, 12);
+  for (let k = 0; k < 7; k++){ const a = Math.PI/2 + (k - 3)*0.28; cylBetween(b, V3(C.x + Math.cos(a)*2, cyv + 3.2, C.z + Math.sin(a)*2), V3(C.x + Math.cos(a)*(8 + (k % 2)*1.5), cyv - 0.3, C.z + Math.sin(a)*(8.6 + (k % 2))), 0.7, 0.35, gm(0x14120e), 6); }
+  for (let i = 0; i < 10; i++){ const a = r()*6.28, d = 7 + r()*6; const g = new THREE.IcosahedronGeometry(0.6 + r()*0.9, 0); g.translate(C.x + Math.cos(a)*d, galH(C.x + Math.cos(a)*d, C.z + Math.sin(a)*d), C.z + Math.sin(a)*d); b.addGeo(g, gm(0x2a2a24, { flatShading: true }), true, true); }
+  // tronco hueco enorme, maraña de raíces, árbol muerto y un carguero viejo hundido en el fango
+  { const T_ = GS.pois.cantina, ty = galH(T_.x, T_.z); const lg = new THREE.CylinderGeometry(2.6, 3.0, 16, 12, 1, true); lg.rotateZ(Math.PI/2); lg.rotateY(0.4); lg.translate(T_.x, ty + 1.6, T_.z - 4); b.addGeo(lg, gm(0x4a3e2e, { side: THREE.DoubleSide, roughness: 1 }), true, true); }
+  { const Mk = GS.pois.market; for (let k = 0; k < 14; k++){ const a = r()*6.28, a2 = a + (r() - 0.5)*2, R1 = 2 + r()*4, R2 = 6 + r()*6; cylBetween(b, V3(Mk.x + Math.cos(a)*R1, galH(Mk.x, Mk.z) - 0.3, Mk.z + Math.sin(a)*R1), V3(Mk.x + Math.cos(a2)*R2, galH(Mk.x, Mk.z) + 1 + r()*2.5, Mk.z + Math.sin(a2)*R2), 0.35, 0.2, gm(0x42382a), 6); } }
+  gnarlTree(b, GS.pois.ruins.x, GS.pois.ruins.z - 6, 1.9, rng(777), { dead: true });
+  { const W_ = GS.pois.hangar, wy = -0.9; gBox(b, 12, 3.2, 6, gm(0x5a5e56, { metalness: 0.4, roughness: 0.8 }), W_.x, wy, W_.z - 6, { ry: 0.5 }); gBox(b, 5, 2, 4, gm(0x4a4e46, { metalness: 0.4 }), W_.x + 4, wy + 3, W_.z - 7, { ry: 0.5, col: false }); gCyl(b, 1.2, 1.4, 3, gm(0x3a3e36, { metalness: 0.5 }), W_.x - 4, wy, W_.z - 3, 10); }
+  // troncos caídos
+  for (let i = 0; i < 26; i++){ const a = r()*6.28, d = 20 + r()*220, x = Math.cos(a)*d, z = Math.sin(a)*d; if (inClear(x, z, 2)) continue; const L_ = 6 + r()*10, ry = r()*3.14, y = galH(x, z);
+    const lg = new THREE.CylinderGeometry(0.5 + r()*0.4, 0.7 + r()*0.4, L_, 8); lg.rotateZ(Math.PI/2); lg.rotateY(ry); lg.translate(x, y + 0.35, z); b.addGeo(lg, gm(0x3e3426, { roughness: 1 }), true, true);
+    for (let k = -2; k <= 2; k++){ const px = x + Math.cos(ry)*k*L_/5, pz = z - Math.sin(ry)*k*L_/5; glowc(px - 0.45, pz - 0.45, px + 0.45, pz + 0.45, y - 1, y + 1.0, 'log'); } }
+  galGroup.add(b.build());
+  // árboles del fondo (más allá de donde se juega)
+  instTrees(420, rr => { const a = rr()*6.28, d = 250 + rr()*330; return [Math.cos(a)*d, Math.sin(a)*d, 1.3 + rr()*1.2, 10 + rr()*12]; }, 0x3a3226, 0x2a4020, { tr0: 0.7, tr1: 1.3, lw: 3.4, lh: 4.2, leafAt: 0.7, cr: 0.6, leafGeo: new THREE.IcosahedronGeometry(0.6, 0) });
+  // sotobosque denso
+  const flora = (m = 1.5) => rr => { const a = rr()*6.28, d = 6 + Math.pow(rr(), 0.7)*240, x = Math.cos(a)*d, z = Math.sin(a)*d; if (inClear(x, z, -m) || galH(x, z) < -0.3) return null; return [x, z, 0.7 + rr()*0.9]; };
+  instFlora('fern', 6500, flora(2.5), { seed: 31 }); instFlora('fern', 2500, flora(1), { seed: 38, col: 0xb8d0a0, sy: 1.6 }); instFlora('bush', 1400, flora(3.5), { seed: 32, col: 0x2a4220 }); instFlora('grass', 4200, flora(1.5), { seed: 36, col: 0x4a6a2a });
+  instFlora('reed', 900, rr => { const a = rr()*6.28, d = 8 + rr()*240, x = Math.cos(a)*d, z = Math.sin(a)*d, h = galH(x, z); return h > -0.9 && h < -0.05 ? [x, z, 0.8 + rr()*0.6] : null; }, { seed: 33 });
+  instFlora('lily', 420, rr => { const a = rr()*6.28, d = 8 + rr()*240, x = Math.cos(a)*d, z = Math.sin(a)*d; return galH(x, z) < -0.55 ? [x, z, 0.6 + rr()*0.8] : null; }, { seed: 34, y: -0.33 });
+  instFlora('shroom', 260, flora(1), { seed: 35, col: 0xc8b890 }); instFlora('shroom', 90, flora(1), { seed: 37, glow: true, col: 0x9affd0 });
+  groundMist(46, 0xc8d4c0, 170, 0.1, 0.6);
+  // fauna: bogwings, babosas del pantano, serpiente dragón y arañas blancas
+  spawnFlyers(14, { s: 0.9, col: 0x6a7a5a, col2: 0x8a6a4a, wcol: 0x7a6a5a, wing: 0.9, R: 150, rad: [6, 18], h: [3, 9], spd: 3, bob: 0.8, flap: 12 });
+  spawnWaders(5, () => makeSlug(0x7a7a6a), { R: 200, hmin: -1.0, hmax: -0.2, spd: 0.35, floatY: -0.75 });
+  spawnDragonsnake(POOLS[0]); spawnDragonsnake(POOLS[3]);
+  spawnKnobbySpider(V3(C.x - 20, 0, C.z + 30)); spawnKnobbySpider(V3(60, 0, 70));
+  GS.beast = { kind: 'pantano', n: 4, at: 'wild' }; GS.particles = 'spore'; GS.amb = 'swamp'; GS.folkN = 0;
+};
+
+/* ============================================================
+   MAPAS — misiones bien marcadas
+   · Minimapa: objetivo principal (dorado), secundaria (azul) y
+     contrato (verde) con flecha en el borde si están lejos; «!»
+     sobre quien da misiones, «$» el informante; puertas de los
+     edificios con interior por colores.
+   · Tab: mapa grande del planeta con nombres, iconos y leyenda.
+   · Mapa galáctico: planetas con secundaria, contrato o encargos.
+   ============================================================ */
+const KIND_COL = { moseisley: '#ffb060', cantina: '#ffb060', garrison: '#ff5a4a', archive: '#ff5a4a', fortress: '#ff5a4a', factory: '#ff5a4a', palace: '#e8d8a0', temple: '#8fd8ff', tomb: '#c05a4a', cave: '#9a9a8a', hut: '#c8a060', outpost: '#aab4c0', carbonite: '#ff9a5a', lab: '#bfe8ff', hangar: '#aab4c0', shop: '#6affb0', house: '#b8a888' };
+function objColor(o){ return o.id === 'side' ? '#5ad8ff' : o.id === 'contract' ? '#6aff8a' : '#ffc53d'; }
+function objPoints(){ const out = []; for (const o of G.objectives || []){ if (o.done || !o.pos) continue; let p = typeof o.pos === 'function' ? o.pos() : o.pos; if (!p) continue; out.push({ p: routeMarker(p) || p, raw: p, col: objColor(o), main: !o.opt, id: o.id }); } return out; }
+function mmIcon(c, a, b, kind, col, txt){
+  c.save(); c.translate(a, b); c.rotate(-P.yaw);
+  if (kind === 'door'){ c.fillStyle = col; c.fillRect(-4.5, -5.5, 9, 11); c.fillStyle = '#10141a'; c.fillRect(-2.2, -2, 4.4, 7.5); }
+  else if (kind === 'giver'){ c.fillStyle = col; c.beginPath(); c.arc(0, 0, 6.5, 0, 6.3); c.fill(); c.strokeStyle = '#000'; c.lineWidth = 1; c.stroke(); c.fillStyle = '#1a1206'; c.font = 'bold 11px Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(txt || '!', 0, 0.5); }
+  else if (kind === 'obj'){ const k = 1 + Math.sin(G.time*5)*0.15; c.fillStyle = col; c.beginPath(); c.moveTo(0, -9*k); c.lineTo(7*k, 0); c.lineTo(0, 9*k); c.lineTo(-7*k, 0); c.closePath(); c.fill(); c.strokeStyle = '#fff'; c.lineWidth = 1.6; c.stroke(); }
+  else if (kind === 'ship'){ c.fillStyle = col; c.beginPath(); c.moveTo(0, -7); c.lineTo(6, 5); c.lineTo(0, 2); c.lineTo(-6, 5); c.closePath(); c.fill(); c.strokeStyle = '#fff'; c.lineWidth = 1; c.stroke(); }
+  c.restore();
+}
+function mmGalExtras(c, W2, R){
+  const at = (x, z) => { const [a, b] = W2(x, z); return [a, b, Math.hypot(a, b)]; };
+  { const [a, b, d] = at(GS.pad.x, GS.pad.z); if (!GS.inRoom && d < R - 4) mmIcon(c, a, b, 'ship', '#5fd8ff'); }
+  for (const Rm of GS.rooms || []){ const p = GS.inRoom ? (Rm === GS.inRoom ? Rm.doorInPos : null) : Rm.doorOutPos; if (!p) continue; const [a, b, d] = at(p.x, p.z); if (d > R - 6) continue; mmIcon(c, a, b, 'door', KIND_COL[Rm.kind] || '#aab4c0'); }
+  for (const f of GS.folk){ if (!f.alive || !f.g.visible) continue; const giver = (f.story && f.story.mark) || f.giver; if (!giver) continue; const [a, b, d] = at(f.pos.x, f.pos.z); if (d > R - 6) continue;
+    mmIcon(c, a, b, 'giver', f === GS.informant ? '#6affb0' : f.sideGiver ? '#5ad8ff' : '#ffd23a', f === GS.informant ? '$' : '!'); }
+  for (const o of objPoints()){ let [a, b, d] = at(o.p.x, o.p.z);
+    if (d > R - 12){ a *= (R - 12)/d; b *= (R - 12)/d; c.save(); c.translate(a, b); c.rotate(Math.atan2(b, a) + Math.PI/2); c.fillStyle = o.col; c.beginPath(); c.moveTo(0, -10); c.lineTo(7, 4); c.lineTo(-7, 4); c.closePath(); c.fill(); c.strokeStyle = '#000'; c.lineWidth = 1.2; c.stroke(); c.restore(); }
+    else mmIcon(c, a, b, 'obj', o.col); }
+}
+/* ---------- Mapa grande (Tab) ---------- */
+(function(){
+  const st = document.createElement('style'); st.textContent = `
+#bigMap{position:fixed;inset:0;z-index:28;background:rgba(4,8,14,.88);display:none;align-items:center;justify-content:center;flex-direction:column}
+#bigMap.on{display:flex}
+#bigMap canvas{width:min(86vh,92vw);height:min(86vh,92vw);border-radius:14px;box-shadow:0 0 0 1px rgba(120,180,255,.35),0 12px 40px rgba(0,0,0,.6)}
+#bigMap .bmT{font:700 18px Bahnschrift,Arial;letter-spacing:4px;color:#dfe8f5;margin-bottom:8px}
+#bigMap .bmL{font:12px system-ui,sans-serif;color:#b8c4d4;margin-top:8px;display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+#bigMap .bmL i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}`;
+  document.head.appendChild(st);
+  document.body.insertAdjacentHTML('beforeend', '<div id="bigMap"><div class="bmT"></div><canvas id="bmCv" width="900" height="900"></canvas><div class="bmL"><span><i style="background:#ffc53d"></i>Objetivo principal</span><span><i style="background:#5ad8ff"></i>Misión secundaria</span><span><i style="background:#6aff8a"></i>Contrato</span><span><i style="background:#ffd23a;border-radius:50%"></i>Da misiones (!)</span><span><i style="background:#6affb0;border-radius:50%"></i>Informante ($)</span><span><i style="background:#ffb060"></i>Cantina</span><span><i style="background:#ff5a4a"></i>Imperial</span><span><i style="background:#6affb0"></i>Tienda</span><span><i style="background:#5fd8ff"></i>Tu nave</span><span>Tab: cerrar</span></div></div>');
+})();
+const BIGMAP = { span: 160 };
+addEventListener('wheel', e => { if (!$('bigMap') || !$('bigMap').classList.contains('on')) return; BIGMAP.span = clamp(BIGMAP.span*(e.deltaY > 0 ? 1.25 : 0.8), 50, 420); drawBigMap(); }, { passive: true });
+function drawBigMap(){
+  const cv = $('bmCv'), c = cv.getContext('2d'), W = cv.width, R = W/2, span = GS.inRoom ? 40 : BIGMAP.span, sc = R/span;
+  const cx = GS.inRoom ? GS.inRoom.O.x : P.pos.x, cz = GS.inRoom ? GS.inRoom.O.z : P.pos.z;
+  const BC = { desert: [[0.86, 0.74, 0.52], [0.7, 0.56, 0.38]], snow: [[0.92, 0.95, 1], [0.7, 0.78, 0.88]], lava: [[0.16, 0.12, 0.12], [0.3, 0.26, 0.24]], swamp: [[0.2, 0.26, 0.14], [0.32, 0.38, 0.2]], forest: [[0.16, 0.3, 0.12], [0.3, 0.42, 0.22]], plains: [[0.32, 0.52, 0.26], [0.55, 0.52, 0.4]], clouds: [[0.9, 0.84, 0.78], [0.9, 0.84, 0.78]], ocean: [[0.84, 0.86, 0.88], [0.84, 0.86, 0.88]], canyon: [[0.52, 0.24, 0.16], [0.36, 0.16, 0.1]], city: [[0.36, 0.38, 0.42], [0.5, 0.52, 0.56]] }[(GALAXY[GS.pid] || {}).biome] || [[0.3, 0.4, 0.3], [0.5, 0.5, 0.4]];
+  const X = x => R + (x - cx)*sc, Z = z => R + (z - cz)*sc;
+  c.fillStyle = '#0e1620'; c.fillRect(0, 0, W, W);
+  // relieve y agua (muestras del terreno)
+  if (!GS.inRoom){ const st = Math.max(3, span/45); for (let x = -span; x < span; x += st) for (let z = -span; z < span; z += st){ const h = galGround(cx + x, cz + z); if (h < -500) continue; const w = (GS.waterY != null && h < GS.waterY - 0.35) || (GS.lavaY != null && h < GS.lavaY + 0.2); const k = clamp(h/60, 0, 1), col = BC[0].map((v, i) => v + (BC[1][i] - v)*k);
+    c.fillStyle = w ? (GS.lavaY != null ? '#d0501a' : '#1c3446') : `rgb(${Math.round(col[0]*200)},${Math.round(col[1]*200)},${Math.round(col[2]*200)})`; c.fillRect(X(cx + x), Z(cz + z), st*sc + 1, st*sc + 1); } }
+  // edificios
+  c.fillStyle = 'rgba(190,200,215,.55)';
+  for (const b of COLS.gal){ if (!b.on || b.pl || b.y1 - b.y0 < 2) continue; if (!!GS.inRoom !== (b.room === (GS.inRoom && GS.inRoom.id))) continue; if (Math.abs((b.x0 + b.x1)/2 - cx) > span || Math.abs((b.z0 + b.z1)/2 - cz) > span) continue; c.fillRect(X(b.x0), Z(b.z0), Math.max(1.5, (b.x1 - b.x0)*sc), Math.max(1.5, (b.z1 - b.z0)*sc)); }
+  const icon = (x, z, kind, col, txt) => { c.save(); c.translate(X(x), Z(z)); c.scale(1.5, 1.5);
+    if (kind === 'door'){ c.fillStyle = col; c.fillRect(-4.5, -5.5, 9, 11); c.fillStyle = '#10141a'; c.fillRect(-2.2, -2, 4.4, 7.5); }
+    else if (kind === 'giver'){ c.fillStyle = col; c.beginPath(); c.arc(0, 0, 6.5, 0, 6.3); c.fill(); c.fillStyle = '#1a1206'; c.font = 'bold 11px Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(txt, 0, 0.5); }
+    else if (kind === 'obj'){ c.fillStyle = col; c.beginPath(); c.moveTo(0, -10); c.lineTo(8, 0); c.lineTo(0, 10); c.lineTo(-8, 0); c.closePath(); c.fill(); c.strokeStyle = '#fff'; c.lineWidth = 1.6; c.stroke(); }
+    else if (kind === 'ship'){ c.fillStyle = col; c.beginPath(); c.moveTo(0, -7); c.lineTo(6, 5); c.lineTo(0, 2); c.lineTo(-6, 5); c.closePath(); c.fill(); }
+    c.restore(); };
+  c.font = '600 14px Bahnschrift, Arial'; c.textAlign = 'center';
+  if (!GS.inRoom){
+    for (const k in GS.names){ const p = poiOut(k); if (!p || Math.abs(p.x - cx) > span || Math.abs(p.z - cz) > span) continue; c.fillStyle = 'rgba(0,0,0,.55)'; const tw = c.measureText(GS.names[k]).width; c.fillRect(X(p.x) - tw/2 - 4, Z(p.z) + 10, tw + 8, 18); c.fillStyle = '#e8eef8'; c.fillText(GS.names[k], X(p.x), Z(p.z) + 24); }
+    icon(GS.pad.x, GS.pad.z, 'ship', '#5fd8ff');
+    for (const Rm of GS.rooms || []) if (Rm.doorOutPos) icon(Rm.doorOutPos.x, Rm.doorOutPos.z, 'door', KIND_COL[Rm.kind] || '#aab4c0');
+  } else if (GS.inRoom.doorInPos) icon(GS.inRoom.doorInPos.x, GS.inRoom.doorInPos.z, 'door', '#ffffff');
+  for (const f of GS.folk){ if (!f.alive || !f.g.visible) continue; const giver = (f.story && f.story.mark) || f.giver; if (!giver) continue; if (!!roomAt(f.pos.x, f.pos.z) !== !!GS.inRoom) continue; icon(f.pos.x, f.pos.z, 'giver', f === GS.informant ? '#6affb0' : f.sideGiver ? '#5ad8ff' : '#ffd23a', f === GS.informant ? '$' : '!'); }
+  for (const o of objPoints()){ const p = GS.inRoom && !roomAt(o.raw.x, o.raw.z) ? o.p : !GS.inRoom && roomAt(o.raw.x, o.raw.z) ? o.p : o.raw; icon(clamp(p.x, cx - span*0.97, cx + span*0.97), clamp(p.z, cz - span*0.97, cz + span*0.97), 'obj', o.col); }
+  // el jugador
+  c.save(); c.translate(X(P.pos.x), Z(P.pos.z)); c.rotate(-P.yaw); c.fillStyle = '#fff'; c.beginPath(); c.moveTo(0, -11); c.lineTo(8, 8); c.lineTo(0, 4); c.lineTo(-8, 8); c.closePath(); c.fill(); c.strokeStyle = '#000'; c.lineWidth = 1.5; c.stroke(); c.restore();
+  $('bigMap').querySelector('.bmT').textContent = (galName(GS.pid) + ' · ' + (GS.inRoom ? GS.inRoom.name : GS.names.plaza || '')).toUpperCase();
+}
+addEventListener('keydown', e => {
+  if (e.code !== 'Tab') return; e.preventDefault();
+  if (curArea !== 'gal' || G.phase === 'menu' || G.chatOpen || G.creator){ $('bigMap').classList.remove('on'); return; }
+  const on = !$('bigMap').classList.contains('on'); $('bigMap').classList.toggle('on', on); if (on) drawBigMap();
+}, true);
+setInterval(() => { if ($('bigMap') && $('bigMap').classList.contains('on')){ if (curArea !== 'gal') $('bigMap').classList.remove('on'); else drawBigMap(); } }, 250);
+/* ---------- Mapa galáctico: dónde hay misiones ---------- */
+function gmMissionIcons(c, id, x, y, k){
+  const icons = [];
+  if (SAGA.side && SIDEQ[SAGA.side.id] && SIDEQ[SAGA.side.id].pl === id) icons.push(['#5ad8ff', '◆']);
+  if (SAGA.contract && SAGA.contract.pid === id) icons.push(['#6aff8a', '$']);
+  const avail = Object.keys(SIDEQ).some(q => SIDEQ[q].pl === id && !(SAGA.sdone || {})[q] && !(SAGA.side && SAGA.side.id === q) && (!SIDEQ[q].requires || SIDEQ[q].requires()));
+  if (avail) icons.push(['#ffd23a', '!']);
+  icons.forEach(([col, t], i) => { const ix = x - 10*k + i*12*k, iy = y + 16*k; c.fillStyle = col; c.beginPath(); c.arc(ix, iy, 5.5*k, 0, 6.3); c.fill(); c.fillStyle = '#10141a'; c.font = `bold ${8.5*k}px Arial`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(t, ix, iy + 0.5*k); });
+  c.textBaseline = 'alphabetic';
+}
+function gmLegend(c, W, H_, k){ c.font = `${11*k}px Bahnschrift, Arial`; c.textAlign = 'left'; const L_ = [['#ffc53d', '◆ Historia'], ['#5ad8ff', '◆ Secundaria en curso'], ['#6aff8a', '$ Contrato'], ['#ffd23a', '! Encargos disponibles']]; L_.forEach(([col, t], i) => { c.fillStyle = col; c.fillText(t, 16*k, H_ - (18 + i*16)*k); }); }
 
 /* ============================================================
    HABILIDADES EN 3.ª PERSONA — el avatar hace lo mismo que se ve
